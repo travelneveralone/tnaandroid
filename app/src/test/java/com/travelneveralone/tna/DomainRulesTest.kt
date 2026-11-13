@@ -115,6 +115,19 @@ class DomainRulesTest {
         assertTrue(DirectMessagePolicy(null).allows(UserRole.Client, UserRole.Guide))
     }
 
+    @Test fun emptyDirectShellHiddenFromChatList() {
+        val empty = ChatThread(
+            title = "Мария", subtitle = "личные сообщения", lastMessage = "", time = "",
+            unread = 0, icon = "person", colors = emptyList(), isPinned = false,
+            kind = ChatThreadKind.Direct, lastActivity = null,
+        )
+        val withMsg = empty.copy(lastActivity = Instant.parse("2026-11-12T21:56:07Z"), lastMessage = "привет")
+        val trip = empty.copy(kind = ChatThreadKind.Trip, title = "Лансароте", lastActivity = null)
+        assertFalse(empty.belongsInChatList)
+        assertTrue(withMsg.belongsInChatList)
+        assertTrue(trip.belongsInChatList)
+    }
+
     @Test fun phoneAndBookingForm() {
         assertEquals("79991234567", PhoneNumber.digits("8 (999) 123-45-67"))
         assertEquals("+79991234567", PhoneNumber.e164("9991234567"))

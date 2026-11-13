@@ -501,6 +501,10 @@ data class ChatThread(
     val muted: Boolean = false,
     val archived: Boolean = false,
 ) {
+    /** Empty 1:1 shells stay off the list until someone actually sends. */
+    val belongsInChatList: Boolean
+        get() = kind != ChatThreadKind.Direct || lastActivity != null
+
     companion object {
         val supportPlaceholder = ChatThread(
             title = "Поддержка TNA",

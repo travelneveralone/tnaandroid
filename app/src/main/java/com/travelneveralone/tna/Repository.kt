@@ -654,7 +654,7 @@ class TnaRepository(
         val raw = api.get("chats", query, ttlSec = null)
         return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             thread(el.jsonObjectOrNull(), me)
-        }
+        }.filter { it.belongsInChatList }
     }
 
     private fun thread(row: JsonObject?, me: UUID?): ChatThread? {

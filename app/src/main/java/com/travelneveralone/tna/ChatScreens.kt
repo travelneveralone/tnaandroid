@@ -116,8 +116,8 @@ fun ChatsScreen(app: AppModel) {
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var archiveShown by remember { mutableStateOf(false) }
-    val visible = app.threads.filter { !it.archived }
-    val archived = app.threads.filter { it.archived }
+    val visible = app.threads.filter { !it.archived && it.belongsInChatList }
+    val archived = app.threads.filter { it.archived && it.belongsInChatList }
     // Support is reachable 24/7: the real thread once loaded, the placeholder before that.
     val support = visible.firstOrNull { it.isSupport } ?: ChatThread.supportPlaceholder
     val trips = visible.filter { !it.isSupport && it.kind != ChatThreadKind.Direct }.sortedByDescending { it.lastActivity }
