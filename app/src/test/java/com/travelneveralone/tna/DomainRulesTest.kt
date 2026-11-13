@@ -128,6 +128,26 @@ class DomainRulesTest {
         val wait = BookingForm(tour, sold, "Анна", "+79990000006")
         assertTrue(wait.isWaitlist)
         assertTrue(wait.seatLimitNote!!.contains("не осталось"))
+        assertFalse(wait.showsReferralField)
+    }
+
+    @Test fun customDatesAndCertificate() {
+        val tour = Mock.tours.first()
+        val custom = BookingForm(tour, null, "Анна", "+79990000006")
+        assertFalse(custom.canSubmit)
+        custom.startDate = LocalDate.of(2027, 3, 3)
+        custom.endDate = LocalDate.of(2027, 3, 9)
+        assertTrue(custom.canSubmit)
+        assertEquals("Свои даты: 3–9 мар", custom.departureText)
+        assertEquals("28 фев – 5 мар", BookingForm.rangeLabel(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 5)))
+        assertEquals("Даты (свои): 3–9 мар", custom.details()[1])
+        assertEquals("TNA-AB12-CD34", CertificateRedemption.formattedCode("tnaab12cd34"))
+        assertEquals("TNA-", CertificateRedemption.formattedCode("TN"))
+        assertEquals("1234", CertificateRedemption.formattedPin("12a345"))
+        val cert = CertificateRedemption()
+        cert.updateCode("AB12CD34")
+        cert.updatePin("1234")
+        assertTrue(cert.canCheck)
     }
 
     @Test fun albumsAndUnread() {
@@ -163,5 +183,24 @@ class DomainRulesTest {
     @Test fun referralResultCopy() {
         assertEquals(ReferralResult.Ok, ReferralResult.fromRaw("ok"))
         assertTrue(ReferralResult.Existing.userMessage.contains("уже ездил"))
+    }
+
+    @Test fun salePlateOnlyForRealSale() {
+        val tour = Tour(
+            name = "Байкал", tagline = "", hashtag = "", region = TourRegion.Russia,
+            days = 5, km = 0, priceFrom = 90000, difficulty = 1, maxAltitude = 0,
+            symbol = "snowflake", colors = emptyList(),
+            departures = listOf(Departure(label = "", spotsLeft = 5, startsOn = LocalDate.of(2027, 2, 1))),
+            program = emptyList(), includes = emptyList(),
+        )
+        assertNull(SalePlate.make(tour, null))
+        val sale = tour.copy().apply { salePriceFrom = 80000; saleLabel = "Чёрная пятница" }
+        val plate = SalePlate.make(sale, "2026-11-30")!!
+        assertEquals("БАЙКАЛ", plate.name)
+        assertEquals("5 ДНЕЙ", plate.daysLine)
+        assertEquals("ЧЁРНАЯ ПЯТНИЦА", plate.mark)
+        assertEquals("ДО 30 НОЯБРЯ", plate.until)
+        assertEquals("Зима", plate.season)
+        assertEquals("", SalePlate.untilLine(null))
     }
 }

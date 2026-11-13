@@ -8,7 +8,11 @@ import androidx.compose.runtime.setValue
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -116,8 +120,13 @@ class Postgrest(
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(40, TimeUnit.SECONDS)
+        .callTimeout(60, TimeUnit.SECONDS)
         .build()
     private val jsonMedia = "application/json".toMediaType()
+
+    /// Requests that outlive the caller's wait (see `cacheFallbackWaitMs`) finish here
+    /// and refresh the cache for the next open.
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val isOffline: Boolean get() = !online()
 
@@ -212,7 +221,25 @@ class Postgrest(
                 if (!online()) throw TnaException("Нет соединения с интернетом")
             }
             if (ttlSec != null) cache.read(cacheKey, ttlSec)?.let { return@withContext it }
+            // Something is cached: wait for the server at most a few seconds, then show
+            // the saved copy. The request is not cancelled, it still refreshes the cache.
+            if (ttlSec != null) {
+                cache.readStale(cacheKey)?.let { stale ->
+                    val pending = background.async { send(method, url, cacheKey, body, prefer) }
+                    return@withContext withTimeoutOrNull(CACHE_FALLBACK_WAIT_MS) { pending.await() } ?: stale
+                }
+            }
         }
+        send(method, url, cacheKey, body, prefer)
+    }
+
+    private suspend fun send(
+        method: String,
+        url: String,
+        cacheKey: String,
+        body: String?,
+        prefer: String?,
+    ): String = withContext(Dispatchers.IO) {
         val jwt = token()
         val request = Request.Builder()
             .url(url)
@@ -229,18 +256,18 @@ class Postgrest(
             http.newCall(request).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    if (method == "GET" || path.contains("/rpc/")) {
+                    if (method == "GET" || url.contains("/rpc/")) {
                         cache.readStale(cacheKey)?.let { return@withContext it }
                     }
                     throw TnaException("Сервер ответил ${response.code}. Запрос не прошёл — можно повторить")
                 }
-                if (method == "GET" || path.contains("/rpc/")) cache.write(cacheKey, text)
+                if (method == "GET" || url.contains("/rpc/")) cache.write(cacheKey, text)
                 text
             }
         } catch (error: TnaException) {
             throw error
         } catch (error: Exception) {
-            if (method == "GET" || path.contains("/rpc/")) {
+            if (method == "GET" || url.contains("/rpc/")) {
                 cache.readStale(cacheKey)?.let { return@withContext it }
             }
             throw TnaException(error.message ?: "Нет соединения с интернетом")
@@ -248,6 +275,11 @@ class Postgrest(
     }
 
     private fun enc(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
+
+    private companion object {
+        /// Same as iOS `PostgRESTClient.cacheFallbackWait`.
+        const val CACHE_FALLBACK_WAIT_MS = 5_000L
+    }
 }
 
 class TnaException(message: String) : Exception(message)
@@ -258,7 +290,12 @@ class AuthSession(
     private val anonKey: String,
 ) {
     private val prefs = context.getSharedPreferences("tna.auth", Context.MODE_PRIVATE)
-    private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+    // Auth sits on the launch path: a slow 4G link must fail fast, not hang (iOS: 12 s / 20 s).
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
     private val mutex = Mutex()
     private val jsonMedia = "application/json".toMediaType()
 
@@ -422,20 +459,27 @@ class AuthSession(
     }
 }
 
+/// Persisted account facts, mirrored into Compose state so every screen redraws on
+/// login / logout / rename (plain SharedPreferences getters never trigger recomposition).
 class AccountStore(context: Context) {
     private val prefs = context.getSharedPreferences("tna.account", Context.MODE_PRIVATE)
+    private var nameState by mutableStateOf(prefs.getString("name", "").orEmpty())
+    private var phoneState by mutableStateOf(prefs.getString("phone", "").orEmpty())
+    private var registeredState by mutableStateOf(prefs.getBoolean("registered", false))
+    private var avatarState by mutableStateOf(prefs.getString("avatar", null))
+
     var name: String
-        get() = prefs.getString("name", "").orEmpty()
-        set(value) { prefs.edit().putString("name", value).apply() }
+        get() = nameState
+        set(value) { nameState = value; prefs.edit().putString("name", value).apply() }
     var phone: String
-        get() = prefs.getString("phone", "").orEmpty()
-        set(value) { prefs.edit().putString("phone", value).apply() }
+        get() = phoneState
+        set(value) { phoneState = value; prefs.edit().putString("phone", value).apply() }
     var isRegistered: Boolean
-        get() = prefs.getBoolean("registered", false)
-        set(value) { prefs.edit().putBoolean("registered", value).apply() }
+        get() = registeredState
+        set(value) { registeredState = value; prefs.edit().putBoolean("registered", value).apply() }
     var avatarPath: String?
-        get() = prefs.getString("avatar", null)
-        set(value) { prefs.edit().putString("avatar", value).apply() }
+        get() = avatarState
+        set(value) { avatarState = value; prefs.edit().putString("avatar", value).apply() }
 }
 
 fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull

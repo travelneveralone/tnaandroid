@@ -22,9 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-private class GeoCountry(val code: String, val rings: List<FloatArray>)
+internal class GeoCountry(val code: String, val rings: List<FloatArray>)
 
-private object WorldAtlas {
+internal object WorldAtlas {
     @Volatile private var cached: List<GeoCountry>? = null
 
     fun load(context: Context): List<GeoCountry> {

@@ -1,5 +1,8 @@
 package com.travelneveralone.tna
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.util.UUID
 
 enum class CatalogFilter(val title: String) {
@@ -140,20 +143,27 @@ object TourMatchEngine {
     }
 }
 
+/// Booking request state (iOS `BookingViewModel`). Fields are Compose state so the sheet
+/// redraws as the person types; the rules are plain and covered by DomainRulesTest.
 class BookingForm(
     val tour: Tour,
     val departure: Departure?,
     name: String = "",
     phone: String = "+7 ",
 ) {
-    var name: String = name
-    var phone: String = phone
-    var peopleCount: Int = 1
-    var datesUnknown: Boolean = false
-    var startDate: java.time.LocalDate? = null
-    var endDate: java.time.LocalDate? = null
-    var friendCode: String = ""
-    var isSubmitting: Boolean = false
+    var name by mutableStateOf(name)
+    var phone by mutableStateOf(phone)
+    var peopleCount by mutableStateOf(1)
+    var datesUnknown by mutableStateOf(false)
+    var startDate by mutableStateOf<java.time.LocalDate?>(null)
+    var endDate by mutableStateOf<java.time.LocalDate?>(null)
+    var friendCode by mutableStateOf("")
+    var alreadyReferred by mutableStateOf(false)
+    var companions by mutableStateOf<List<TravelCompanion>>(emptyList())
+    var isSubmitting by mutableStateOf(false)
+    var isDone by mutableStateOf(false)
+    var errorMessage by mutableStateOf<String?>(null)
+    val cert = CertificateRedemption()
 
     val isCustomDates: Boolean get() = departure == null
     val isWaitlist: Boolean get() = departure?.isSoldOut == true
@@ -170,6 +180,17 @@ class BookingForm(
             !isSubmitting
 
     val maxPeople: Int get() = departure?.let { maxOf(1, it.spotsLeft) } ?: 10
+    val showsReferralField: Boolean get() = !isWaitlist && !alreadyReferred
+    val canAttachCompanions: Boolean get() = !isWaitlist
+    val canUseCertificate: Boolean get() = !isWaitlist
+
+    val companionSummary: String
+        get() = if (companions.isEmpty()) "Добавить данные тех, для кого бронируешь" else "Выбрано: ${companions.size}"
+
+    fun applyCompanions(chosen: List<TravelCompanion>) {
+        companions = chosen
+        if (chosen.isNotEmpty()) peopleCount = chosen.size.coerceIn(1, maxPeople)
+    }
 
     val seatLimitNote: String?
         get() {
@@ -182,20 +203,141 @@ class BookingForm(
         get() {
             departure?.let { return it.label }
             if (datesUnknown) return "Свои даты: по договорённости"
-            val start = startDate
-            val end = endDate
-            if (start != null && end != null && !end.isBefore(start)) {
-                return "Свои даты: ${start.dayOfMonth}–${end.dayOfMonth}"
-            }
-            return "Свои даты"
+            val label = customDatesLabel ?: return "Свои даты"
+            return "Свои даты: $label"
         }
+
+    val customDatesLabel: String?
+        get() {
+            val start = startDate ?: return null
+            val end = endDate ?: return null
+            return rangeLabel(start, end)
+        }
+
+    /// Lines for the manager (support chat + amo), same order as iOS.
+    fun details(): List<String> {
+        val dates = when {
+            departure != null -> "Заезд: ${departure.label}"
+            datesUnknown -> "Даты: по договорённости"
+            else -> "Даты (свои): ${customDatesLabel ?: "не выбраны"}"
+        }
+        return listOfNotNull("Тур: ${tour.name}", dates, cert.detailsLine)
+    }
 
     fun request(): BookingRequest = BookingRequest(
         tourName = tour.name,
         departureLabel = departureText,
         name = name.trim(),
         phone = PhoneNumber.e164(phone),
-        peopleCount = peopleCount,
+        peopleCount = peopleCount.coerceIn(1, maxPeople),
+        companions = companions,
+        details = details(),
         departureId = departure?.backendId,
     )
+
+    companion object {
+        private val monthsShort = listOf("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+        /// «3–9 мар» or «28 фев – 5 мар».
+        fun rangeLabel(start: java.time.LocalDate, end: java.time.LocalDate): String {
+            val m1 = monthsShort[start.monthValue - 1]
+            val m2 = monthsShort[end.monthValue - 1]
+            return if (start.monthValue == end.monthValue && start.year == end.year) {
+                "${start.dayOfMonth}–${end.dayOfMonth} $m2"
+            } else {
+                "${start.dayOfMonth} $m1 – ${end.dayOfMonth} $m2"
+            }
+        }
+    }
+}
+
+/// Gift-certificate number + PIN typed into a request form (iOS `CertificateRedemption`).
+class CertificateRedemption {
+    var code by mutableStateOf(PREFIX)
+    var pin by mutableStateOf("")
+    var result by mutableStateOf<CertificateCheck?>(null)
+    var amount by mutableStateOf(0)
+    var isChecking by mutableStateOf(false)
+
+    val applied: Boolean get() = result == CertificateCheck.Applicable
+    val statusText: String?
+        get() = when (val r = result) {
+            null -> null
+            CertificateCheck.Applicable -> "Сертификат на ${Money.grouped(amount)} ₽ применён ✓"
+            else -> r.userMessage
+        }
+    val codeComplete: Boolean get() = code.count { it.isLetterOrDigit() } >= 3 + BODY_LENGTH
+    val canCheck: Boolean get() = codeComplete && pin.trim().length == 4 && !isChecking
+    val detailsLine: String?
+        get() = if (!applied) null
+        else "Сертификат: ${code.trim().uppercase()} на ${Money.grouped(amount)} ₽ (проверен, PIN сошёлся)"
+
+    fun updateCode(raw: String) {
+        code = formattedCode(raw)
+        result = null
+    }
+
+    fun updatePin(raw: String) {
+        pin = formattedPin(raw)
+        result = null
+    }
+
+    companion object {
+        const val PREFIX = "TNA-"
+        private const val BODY_LENGTH = 8
+
+        /// The form types the dashes and "TNA-"; the person types characters.
+        fun formattedCode(raw: String): String {
+            var body = raw.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }
+            if (body.startsWith("TNA")) body = body.drop(3)
+            else if ("TNA".startsWith(body)) body = ""
+            body = body.take(BODY_LENGTH)
+            val head = body.take(4)
+            val tail = body.drop(4)
+            return PREFIX + head + if (tail.isEmpty()) "" else "-$tail"
+        }
+
+        fun formattedPin(raw: String): String = raw.filter { it.isDigit() }.take(4)
+    }
+}
+
+/// The black price plate on a sale card (iOS `SalePlate`). Null when the tour is not cheaper.
+data class SalePlate(
+    val season: String,
+    val name: String,
+    val daysLine: String,
+    val price: Int,
+    val base: Int,
+    val mark: String,
+    val until: String,
+) {
+    companion object {
+        private val ru = java.util.Locale("ru")
+        private val months = listOf(
+            "января", "февраля", "марта", "апреля", "мая", "июня",
+            "июля", "августа", "сентября", "октября", "ноября", "декабря",
+        )
+
+        fun make(tour: Tour, untilIso: String?): SalePlate? {
+            val price = tour.salePriceFrom ?: return null
+            if (!tour.hasSale) return null
+            val season = if (tour.seasonText == "Круглый год") "" else tour.seasonText
+            val word = pluralRU(tour.days, "день", "дня", "дней")
+            return SalePlate(
+                season = season,
+                name = tour.name.uppercase(ru),
+                daysLine = "${tour.days} $word".uppercase(ru),
+                price = price,
+                base = tour.priceFrom,
+                mark = (tour.saleLabel ?: "Акция").uppercase(ru),
+                until = untilLine(untilIso),
+            )
+        }
+
+        /// `yyyy-mm-dd` → «ДО 30 НОЯБРЯ».
+        fun untilLine(iso: String?): String {
+            val date = Dates.parseDay(iso) ?: return ""
+            return "ДО ${date.dayOfMonth} ${months[date.monthValue - 1]}".uppercase(ru)
+        }
+    }
 }

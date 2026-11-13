@@ -105,6 +105,12 @@ data class Trip(
     val imageUrl: String? = null,
 ) {
     val isUpcoming: Boolean get() = endsOn?.let { !it.isBefore(Dates.todayUtc()) } ?: true
+    val isRunning: Boolean
+        get() {
+            val today = Dates.todayUtc()
+            val start = startsOn ?: return false
+            return !start.isAfter(today) && (endsOn?.let { !it.isBefore(today) } ?: true)
+        }
     val isGuide: Boolean get() = role == "guide" || role == "coordinator"
     val countdown: String
         get() {
@@ -319,7 +325,18 @@ data class PassportData(
     val achievements: List<Achievement>,
     val places: List<VisitedPlace>,
     val leaderboard: List<LeaderboardEntry>,
-)
+) {
+    val isLoaded: Boolean get() = userName.isNotBlank() || stats.isNotEmpty()
+
+    companion object {
+        /// Nothing loaded yet (or a guest). Never fall back to `Mock.passport` in the live app.
+        val empty = PassportData(
+            userName = "", memberSince = "", level = "", levelProgress = 0.0, nextLevelHint = "",
+            stats = emptyList(), stamps = emptyList(), achievements = emptyList(),
+            places = emptyList(), leaderboard = emptyList(),
+        )
+    }
+}
 
 /// Completed-tour ladder. Copy matches the iOS passport; the server only returns counts.
 enum class TravelerLevel(val title: String, val threshold: Int, val nextHint: String) {
@@ -624,7 +641,37 @@ data class GiftCertificate(
     val wish: String,
     val status: String,
     val paymentUrl: String? = null,
-)
+    val pin: String = "",
+    val expiresOn: String? = null,
+) {
+    val amountText: String get() = Money.rubles(amount)
+    val statusTitle: String
+        get() = when (status) {
+            "paid" -> "Активен"
+            "redeemed" -> "Использован"
+            "expired" -> "Срок истёк"
+            "cancelled" -> "Отменён"
+            else -> "Ждёт оплаты"
+        }
+    val expiresText: String?
+        get() = Dates.parseDay(expiresOn)?.let {
+            "действует до " + java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale("ru")).format(it)
+        }
+    val shareText: String
+        get() {
+            val lines = mutableListOf(
+                "🎁 Подарочный сертификат Travel Never Alone",
+                "Номер: ${code.orEmpty()}",
+                "PIN для активации: $pin",
+                "Номинал: $amountText",
+            )
+            if (recipientName.isNotBlank()) lines += "Для: $recipientName"
+            if (wish.isNotBlank()) lines += "«$wish»"
+            expiresText?.let { lines += it.replaceFirstChar { c -> c.uppercase() } }
+            lines += "Обменять на путешествие: travelneveralone.com"
+            return lines.joinToString("\n")
+        }
+}
 
 data class ProfileExtras(
     val lastName: String = "",
@@ -804,4 +851,12 @@ object BonusCopy {
         }
         return Money.rubles(amount)
     }
+}
+
+/// «Нашлась неточность?» topics; each opens the support chat with a prefilled draft.
+enum class DataIssue(val title: String, val prefill: String) {
+    Trips("Поездки", "Здравствуйте! В приложении неточность в моих поездках: "),
+    Bonuses("Бонусы", "Здравствуйте! Кажется, неверно посчитаны мои бонусы: "),
+    Personal("Имя или личные данные", "Здравствуйте! В моих данных в приложении ошибка: "),
+    Other("Другое", "Здравствуйте! В приложении неточность: "),
 }

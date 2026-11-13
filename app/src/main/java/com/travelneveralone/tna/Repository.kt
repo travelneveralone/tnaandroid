@@ -64,17 +64,52 @@ class TnaRepository(
         )
     }
 
+    /// Same pipeline as iOS `LiveBookingService.submit`: insert the booking, hand it to
+    /// amoCRM (edge function), and drop a scannable summary into the support chat.
     suspend fun submitBooking(request: BookingRequest) {
+        val companionNote = if (request.companions.isEmpty()) "" else "\n" + CompanionFormat.message(request.companions)
         val body = buildJsonObject {
             put("name", request.name)
             put("phone", request.phone)
             put("people_count", request.peopleCount)
-            put("note", request.details.ifEmpty { listOf(request.subject) }.joinToString("\n"))
+            put("note", "${request.headline}: ${request.subject}$companionNote")
             request.departureId?.let { put("departure_id", it.toString()) }
             put("source", "app")
         }.toString()
-        api.post("bookings", body, prefer = "return=minimal")
+        val created = api.post("bookings", body, prefer = "return=representation")
+        val bookingId = json.parseToJsonElement(created).arrayOrEmpty().firstOrNull()?.jsonObjectOrNull()?.str("id")
+        // Fire-and-forget: a failed push leaves amo status null for the admin retry.
+        if (bookingId != null) {
+            runCatching { api.function("amocrm-booking", buildJsonObject { put("booking_id", bookingId) }.toString()) }
+        }
+        runCatching {
+            val chatId = api.rpc("ensure_manager_chat").trim().trim('"')
+            val message = buildJsonObject {
+                put("id", UUID.randomUUID().toString())
+                put("chat_id", chatId)
+                put("text", supportText(request))
+            }.toString()
+            api.post("messages", message, prefer = "resolution=ignore-duplicates")
+        }
     }
+
+    /// Gift certificate number + PIN, verified on the server (check_certificate RPC).
+    suspend fun checkCertificate(code: String, pin: String): Pair<CertificateCheck, Int> = runCatching {
+        val raw = api.rpc("check_certificate", buildJsonObject {
+            put("p_code", code.trim())
+            put("p_pin", pin.trim())
+        }.toString())
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching CertificateCheck.Error to 0
+        when (obj.str("status")) {
+            "paid" -> CertificateCheck.Applicable to (obj.dbl("amount")?.toInt() ?: 0)
+            "redeemed" -> CertificateCheck.AlreadyRedeemed to 0
+            "expired" -> CertificateCheck.Expired to 0
+            "cancelled" -> CertificateCheck.Cancelled to 0
+            "pending" -> CertificateCheck.PendingPayment to 0
+            null -> CertificateCheck.Error to 0
+            else -> CertificateCheck.NotFound to 0
+        }
+    }.getOrDefault(CertificateCheck.Error to 0)
 
     suspend fun joinWaitlist(departureId: UUID, name: String, phone: String) {
         api.rpc("join_waitlist", buildJsonObject {
@@ -137,7 +172,7 @@ class TnaRepository(
 
     suspend fun fetchReviews(tourId: UUID): List<TourReview> = reviews(
         listOf(
-            "select" to "id,rating,text,created_at,reply,author:public_profiles(name,avatar_url)",
+            "select" to "id,rating,text,created_at,images,reply,author:public_profiles(name,avatar_url)",
             "tour_id" to "eq.${tourId}",
             "is_published" to "eq.true",
             "order" to "created_at.desc",
@@ -146,7 +181,7 @@ class TnaRepository(
 
     suspend fun fetchAllReviews(): List<TourReview> = reviews(
         listOf(
-            "select" to "id,rating,text,created_at,reply,author:public_profiles(name,avatar_url),tours(name)",
+            "select" to "id,rating,text,created_at,images,reply,author:public_profiles(name,avatar_url),tours(name)",
             "is_published" to "eq.true",
             "order" to "created_at.desc",
             "limit" to "60",
@@ -160,11 +195,12 @@ class TnaRepository(
             val author = row["author"]?.jsonObjectOrNull()
             TourReview(
                 id = UUID.fromString(row.str("id")),
-                author = author?.str("name") ?: "Путешественник",
+                author = author?.str("name")?.takeIf { it.isNotBlank() } ?: "Путешественник",
                 rating = row.int("rating") ?: 5,
                 text = row.str("text").orEmpty(),
-                date = row.str("created_at")?.take(10).orEmpty(),
-                reply = row.str("reply"),
+                date = displayDay(row.str("created_at")),
+                images = row["images"]?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+                reply = row.str("reply")?.trim()?.takeIf { it.isNotEmpty() },
                 tourName = row["tours"]?.jsonObjectOrNull()?.str("name"),
                 authorAvatarUrl = author?.str("avatar_url"),
             )
@@ -221,6 +257,55 @@ class TnaRepository(
         }
     }
 
+    /// Tours this user asked to hear about when dates open (0077).
+    suspend fun subscribedTourIds(): Set<UUID> = runCatching {
+        json.parseToJsonElement(api.rpc("my_tour_subscriptions")).arrayOrEmpty()
+            .mapNotNull { it.jsonPrimitiveOrNull()?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() } }
+            .toSet()
+    }.getOrDefault(emptySet())
+
+    suspend fun setSubscription(tourId: UUID, on: Boolean) {
+        val body = buildJsonObject {
+            put("p_tour", tourId.toString())
+            put("p_on", on)
+        }.toString()
+        api.rpc("set_tour_subscription", body)
+    }
+
+    /// Ended departures this traveller was on. Not cached on purpose: a cached
+    /// "you may review" survives the review and offers a form the DB then rejects.
+    suspend fun reviewableTrips(): List<ReviewableTrip> {
+        val raw = api.rpc("my_reviewable_trips")
+        return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
+            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+            ReviewableTrip(
+                id = row.str("departure_id")?.let(UUID::fromString) ?: return@mapNotNull null,
+                tourId = row.str("tour_id")?.let(UUID::fromString) ?: return@mapNotNull null,
+                tourName = row.str("tour_name").orEmpty(),
+                label = row.str("label").orEmpty(),
+                endsOn = row.str("ends_on").orEmpty(),
+                reviewed = row.bool("reviewed") == true,
+            )
+        }
+    }
+
+    /// `departure_id` is checked by the insert policy (0069): roster + ended trip.
+    suspend fun submitReview(tourId: UUID, departureId: UUID, rating: Int, text: String, images: List<String>) {
+        val body = buildJsonObject {
+            put("tour_id", tourId.toString())
+            put("departure_id", departureId.toString())
+            put("rating", rating)
+            put("text", text)
+            put("images", buildJsonArray { images.forEach { add(it) } })
+        }.toString()
+        api.post("reviews", body)
+    }
+
+    /// Review photos live in their own public bucket (not chat-media, which is private).
+    suspend fun uploadReviewImage(bytes: ByteArray): String? = runCatching {
+        api.upload("review-media", "${UUID.randomUUID()}.jpg", compressJpeg(bytes), "image/jpeg")
+    }.getOrNull()
+
     suspend fun myRole(): String = runCatching {
         api.rpc("my_role").trim().trim('"')
     }.getOrDefault("client")
@@ -242,9 +327,25 @@ class TnaRepository(
         )
     }.getOrNull()
 
+    /// Bonus ledger rows (`my_bonus_lines`); wording stays on the client (BonusCopy).
+    suspend fun bonusLines(): List<BonusLine> = runCatching {
+        json.parseToJsonElement(api.rpc("my_bonus_lines", ttlSec = 60)).arrayOrEmpty().mapNotNull { el ->
+            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+            BonusLine(
+                id = row.str("id")?.let(UUID::fromString) ?: UUID.randomUUID(),
+                kind = row.str("kind").orEmpty(),
+                amount = row.int("amount") ?: 0,
+                remaining = row.int("remaining") ?: 0,
+                state = row.str("state").orEmpty(),
+                expiresOn = row.str("expires_on"),
+                title = row.str("title") ?: row.str("tour_name").orEmpty(),
+            )
+        }
+    }.getOrDefault(emptyList())
+
     suspend fun fetchPassport(displayName: String): PassportData {
         val raw = api.rpc("my_passport", ttlSec = 300)
-        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return Mock.passport.copy(userName = displayName)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: throw TnaException("Паспорт не загрузился")
         val stats = obj["stats"]?.jsonObjectOrNull()
         val tours = stats?.int("tours") ?: 0
         val level = TravelerLevel.forTours(tours)
@@ -407,12 +508,13 @@ class TnaRepository(
         return signChatMedia(mapped)
     }
 
-    suspend fun sendText(chatId: UUID, text: String, messageId: UUID = UUID.randomUUID()) {
+    suspend fun sendText(chatId: UUID, text: String, messageId: UUID = UUID.randomUUID(), replyTo: UUID? = null) {
         api.post("messages", buildJsonObject {
             put("id", messageId.toString())
             put("chat_id", chatId.toString())
             put("text", text)
             put("kind", "text")
+            replyTo?.let { put("reply_to", it.toString()) }
         }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
         runCatching {
             api.function("notify-message", buildJsonObject { put("message_id", messageId.toString()) }.toString())
@@ -452,6 +554,25 @@ class TnaRepository(
             put("p_options", buildJsonArray { add(JsonPrimitive(optionId)) })
         }.toString())
         return raw.trim() == "true"
+    }
+
+    suspend fun editMessage(id: UUID, text: String) {
+        api.patch("messages", listOf("id" to "eq.${id.toString().lowercase()}"), buildJsonObject {
+            put("text", text)
+            put("edited_at", Instant.now().toString())
+        }.toString())
+    }
+
+    suspend fun deleteMessage(id: UUID) {
+        api.delete("messages", listOf("id" to "eq.${id.toString().lowercase()}"))
+    }
+
+    suspend fun setChatMuted(chatId: UUID, muted: Boolean) {
+        api.rpc("set_chat_muted", buildJsonObject { put("p_chat", chatId.toString()); put("p_val", muted) }.toString())
+    }
+
+    suspend fun setChatArchived(chatId: UUID, archived: Boolean) {
+        api.rpc("set_chat_archived", buildJsonObject { put("p_chat", chatId.toString()); put("p_val", archived) }.toString())
     }
 
     suspend fun ensureSupport(): ChatThread {
@@ -539,6 +660,27 @@ class TnaRepository(
         )
     }
 
+    /// One path per user, overwritten; `?v=` busts the CDN and image caches.
+    suspend fun uploadAvatar(bytes: ByteArray): String? = runCatching {
+        val uid = auth.currentUserId() ?: return@runCatching null
+        val url = api.upload("avatars", "${uid.toString().lowercase()}/avatar.jpg", compressJpeg(bytes, 512), "image/jpeg")
+        "$url?v=${System.currentTimeMillis() / 1000}"
+    }.getOrNull()
+
+    suspend fun setAvatarUrl(url: String?): Boolean = runCatching {
+        val uid = auth.currentUserId() ?: return@runCatching false
+        api.patch("profiles", listOf("id" to "eq.${uid.toString().lowercase()}"), buildJsonObject {
+            put("avatar_url", url)
+        }.toString())
+        true
+    }.getOrDefault(false)
+
+    suspend fun currentAvatarUrl(): String? = runCatching {
+        val uid = auth.currentUserId() ?: return@runCatching null
+        val raw = api.get("profiles", listOf("select" to "avatar_url", "id" to "eq.${uid.toString().lowercase()}"), ttlSec = 3600)
+        json.parseToJsonElement(raw).arrayOrEmpty().firstOrNull()?.jsonObjectOrNull()?.str("avatar_url")
+    }.getOrNull()
+
     suspend fun saveProfile(draft: ProfileDraft) {
         val uid = auth.currentUserId() ?: return
         api.patch("profiles", listOf("id" to "eq.${uid.toString().lowercase()}"), buildJsonObject {
@@ -622,7 +764,7 @@ class TnaRepository(
         api.delete("travel_companions", listOf("id" to "eq.$id"))
     }
 
-    suspend fun buyCertificate(amount: Int, recipient: String, wish: String, buyerName: String, buyerPhone: String): String? {
+    suspend fun buyCertificate(amount: Int, recipient: String, wish: String, buyerName: String, buyerPhone: String): GiftCertificate? {
         val raw = api.function("buy-certificate", buildJsonObject {
             put("action", "create")
             put("amount", amount)
@@ -632,8 +774,58 @@ class TnaRepository(
             put("buyer_phone", buyerPhone.trim())
         }.toString())
         val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return null
-        return obj.str("payment_url") ?: obj["certificate"]?.jsonObjectOrNull()?.str("payment_url")
+        val cert = obj["certificate"]?.jsonObjectOrNull()?.let { certificate(it) } ?: return null
+        return cert.copy(paymentUrl = obj.str("payment_url") ?: cert.paymentUrl)
     }
+
+    suspend fun certificateStatus(id: UUID): GiftCertificate? = runCatching {
+        val raw = api.function("buy-certificate", buildJsonObject {
+            put("action", "status")
+            put("id", id.toString())
+        }.toString())
+        json.parseToJsonElement(raw).jsonObjectOrNull()?.get("certificate")?.jsonObjectOrNull()?.let { certificate(it) }
+    }.getOrNull()
+
+    suspend fun myCertificates(): List<GiftCertificate> = runCatching {
+        val raw = api.get("gift_certificates", listOf(
+            "select" to "id,code,pin,amount,status,recipient_name,wish,expires_on,payment_url",
+            "order" to "created_at.desc",
+        ), ttlSec = null)
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { it.jsonObjectOrNull()?.let(::certificate) }
+    }.getOrDefault(emptyList())
+
+    private fun certificate(row: JsonObject): GiftCertificate? {
+        val id = row.str("id")?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return null
+        return GiftCertificate(
+            id = id,
+            code = row.str("code"),
+            amount = row.dbl("amount")?.toInt() ?: 0,
+            recipientName = row.str("recipient_name").orEmpty(),
+            wish = row.str("wish").orEmpty(),
+            status = row.str("status").orEmpty().ifBlank { "pending" },
+            paymentUrl = row.str("payment_url"),
+            pin = row.str("pin").orEmpty(),
+            expiresOn = row.str("expires_on"),
+        )
+    }
+
+    /// Emergency contacts of a departure; cached and stale-if-error so they work offline.
+    suspend fun departureContacts(departureId: UUID): List<TripContact> = runCatching {
+        val raw = api.get("departure_contacts", listOf(
+            "select" to "id,name,phone,sort",
+            "departure_id" to "eq.${departureId.toString().lowercase()}",
+            "order" to "sort.asc",
+        ), ttlSec = 3600)
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
+            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+            TripContact(
+                id = row.str("id")?.let(UUID::fromString) ?: UUID.randomUUID(),
+                name = row.str("name").orEmpty(),
+                phone = row.str("phone").orEmpty(),
+                sort = row.int("sort") ?: 0,
+            )
+        }
+    }.getOrDefault(emptyList())
 
     private fun reactions(rows: JsonArray?, me: String?): List<MessageReaction> {
         if (rows == null || rows.isEmpty()) return emptyList()
@@ -691,9 +883,8 @@ class TnaRepository(
         }
     }
 
-    private fun compressJpeg(bytes: ByteArray): ByteArray {
+    private fun compressJpeg(bytes: ByteArray, max: Int = 1600): ByteArray {
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return bytes
-        val max = 1600
         val longest = maxOf(bitmap.width, bitmap.height)
         val scaled = if (longest > max) {
             val scale = max.toFloat() / longest
@@ -712,3 +903,38 @@ fun monthTitle(date: java.time.LocalDate): String =
     DateTimeFormatter.ofPattern("LLLL yyyy", java.util.Locale("ru"))
         .format(date.atStartOfDay(ZoneId.of("UTC")))
         .replaceFirstChar { it.titlecase(java.util.Locale("ru")) }
+
+/// Scannable multi-line summary for the support / amo chat (iOS `supportText`).
+fun supportText(r: BookingRequest): String {
+    val lines = mutableListOf("📝 ${r.headline}", "")
+    if (r.details.isEmpty()) {
+        lines += r.subject.split("·").map { it.trim() }.filter { it.isNotEmpty() }
+    } else {
+        lines += r.details
+    }
+    if (r.showsPeople) lines += "Человек: ${r.peopleCount}"
+    lines += "Контакт: ${r.name}"
+    lines += "Тел: ${PhoneNumber.pretty(r.phone)}"
+    if (r.companions.isNotEmpty()) {
+        lines += ""
+        lines += CompanionFormat.message(r.companions)
+    }
+    return lines.joinToString("\n")
+}
+
+/// «Кто едет» block for the manager (iOS `CompanionFormat`), with the fields Android stores.
+object CompanionFormat {
+    fun message(list: List<TravelCompanion>): String {
+        if (list.isEmpty()) return ""
+        val header = "👥 Кто едет (${list.size})"
+        val blocks = list.mapIndexed { i, c -> block(i + 1, c) }
+        return (listOf(header) + blocks).joinToString("\n————————\n")
+    }
+
+    fun block(index: Int, c: TravelCompanion): String {
+        val lines = mutableListOf("$index. ${c.fullName.trim().ifEmpty { "Без имени" }}")
+        c.birthday?.takeIf { it.isNotBlank() }?.let { lines += "ДР: ${BonusCopy.shortDate(it)}" }
+        c.document.trim().takeIf { it.isNotEmpty() }?.let { lines += "Документ: $it" }
+        return lines.joinToString("\n")
+    }
+}
