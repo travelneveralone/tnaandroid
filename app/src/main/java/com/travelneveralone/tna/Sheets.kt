@@ -881,50 +881,6 @@ private fun ToggleRow(title: String, subtitle: String?, on: Boolean, enabled: Bo
 
 // MARK: - Companions
 
-@Composable
-fun CompanionsSheet(app: AppModel) {
-    var adding by remember { mutableStateOf(false) }
-    var last by remember { mutableStateOf("") }
-    var first by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { app.loadCompanions() }
-    SheetColumn(spacing = 16) {
-        Text("ПОПУТЧИКИ", style = displayStyle(28))
-        Text("Сохрани данные тех, для кого бронируешь билеты — семьи, детей. Не придётся вводить их каждый раз.", color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        if (app.companions.isEmpty() && !adding) {
-            EmptyState(Icons.Filled.Groups, "Пока никого нет", "Добавь первого попутчика — он появится в заявках одним касанием.")
-        }
-        if (app.companions.isNotEmpty()) {
-            val shape = RoundedCornerShape(18.dp)
-            Column(Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape)) {
-                app.companions.forEachIndexed { index, person ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(null, person.firstName.ifBlank { person.lastName }, 40)
-                        Spacer(Modifier.width(12.dp))
-                        Text(person.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Icon(Icons.Filled.Delete, "Удалить попутчика", tint = TnaColor.subtle, modifier = Modifier.size(20.dp).pressable(0.9f) { app.removeCompanion(person.id) })
-                    }
-                    if (index < app.companions.lastIndex) RowDivider()
-                }
-            }
-        }
-        if (adding) {
-            Text("ДОБАВИТЬ ПОПУТЧИКА", style = displayStyle(20))
-            BookingField("Фамилия", last) { last = it }
-            BookingField("Имя", first) { first = it }
-            PrimaryButton("Сохранить", enabled = last.isNotBlank() && first.isNotBlank()) {
-                app.addCompanion(last, first)
-                last = ""; first = ""; adding = false
-            }
-        } else {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.accent.copy(alpha = 0.12f)).pressable(0.98f) { adding = true }.padding(vertical = 14.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) { Text("Добавить попутчика", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
-        }
-    }
-}
-
 // MARK: - Countries
 
 @Composable
@@ -991,44 +947,6 @@ fun CountriesSheet(app: AppModel) {
 }
 
 // MARK: - Edit profile
-
-@Composable
-fun EditProfileSheet(app: AppModel) {
-    var last by remember { mutableStateOf(app.profile.lastName) }
-    var first by remember { mutableStateOf(app.profile.firstName) }
-    var patronymic by remember { mutableStateOf(app.profile.patronymic) }
-    var city by remember { mutableStateOf(app.profile.city) }
-    var birthday by remember { mutableStateOf(app.profile.birthday) }
-    SheetColumn(spacing = 14) {
-        Text("ПРОФИЛЬ", style = displayStyle(28))
-        BookingField("Фамилия", last) { last = it }
-        BookingField("Имя", first) { first = it }
-        BookingField("Отчество", patronymic) { patronymic = it }
-        BookingField("Город проживания", city) { city = it }
-        BookingField("Дата рождения (ГГГГ-ММ-ДД)", birthday, keyboard = KeyboardType.Number) { birthday = it }
-        val preview = listOf(first, last.take(1).let { if (it.isBlank()) "" else "$it." }).filter { it.isNotBlank() }.joinToString(" ")
-        if (preview.isNotBlank()) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(TnaColor.accent.copy(alpha = 0.08f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Как тебя видят другие", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(preview, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("Тебя увидят в чатах заездов и в рейтинге", color = TnaColor.subtle, fontSize = 12.sp)
-            }
-        }
-        if (app.account.phone.isNotBlank()) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(TnaColor.surface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Телефон", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text(PhoneNumber.pretty(app.account.phone), color = TnaColor.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Pill("подтверждён", Color.hex(0x2E9E5B))
-            }
-        }
-        PrimaryButton("Сохранить", enabled = first.trim().length >= 2 || last.trim().length >= 2) {
-            app.saveProfile(ProfileDraft(last.trim(), first.trim(), patronymic.trim(), city.trim(), birthday.trim()))
-            app.sheet = null
-        }
-    }
-}
 
 // MARK: - Compass
 

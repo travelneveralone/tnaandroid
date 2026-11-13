@@ -89,7 +89,7 @@ fun Root(app: AppModel) {
                 AppTab.Passport -> PassportScreen(app)
                 AppTab.Profile -> ProfileScreen(app)
             }
-            val hideBar = app.openTour != null || app.openChat != null || app.showSplash || imeVisible
+            val hideBar = app.openTour != null || app.openChat != null || app.showSplash || imeVisible || app.recapShown || app.tripModeShown || app.cropSource != null
             AnimatedVisibility(
                 !hideBar,
                 enter = slideInVertically { it } + fadeIn(),
@@ -118,6 +118,12 @@ fun Root(app: AppModel) {
         }
         AnimatedVisibility(app.showSplash, enter = fadeIn(), exit = fadeOut()) { Splash(app.isProd) }
         app.sheet?.let { sheet -> SheetHost(app, sheet) { app.sheet = null } }
+        // Full-screen covers sit above tabs and sheets, like iOS fullScreenCover.
+        val recap = app.recap
+        if (app.recapShown && recap != null) YearRecapScreen(app, recap)
+        if (app.tripModeShown) TripModeScreen(app)
+        app.miniProfile?.let { MiniProfileSheet(app, it) }
+        app.cropSource?.let { AvatarCropScreen(app, it) }
     }
 }
 

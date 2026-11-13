@@ -1,5 +1,8 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Restaurant
 import android.graphics.Typeface
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -211,6 +214,9 @@ fun sfIcon(symbol: String): ImageVector {
     val s = symbol.lowercase()
     return when {
         s.startsWith("mountain") -> Icons.Filled.Landscape
+        s.startsWith("fork.knife") -> Icons.Filled.Restaurant
+        s.startsWith("car.fill") || s == "car" -> Icons.Filled.DirectionsCar
+        s.startsWith("mappin") -> Icons.Filled.Place
         s.startsWith("snowflake") || s.startsWith("wind.snow") -> Icons.Filled.AcUnit
         s.startsWith("leaf") -> Icons.Filled.Eco
         s.startsWith("tree") -> Icons.Filled.Park

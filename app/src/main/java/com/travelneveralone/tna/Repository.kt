@@ -343,14 +343,9 @@ class TnaRepository(
         }
     }.getOrDefault(emptyList())
 
-    suspend fun fetchPassport(displayName: String): PassportData {
-        val raw = api.rpc("my_passport", ttlSec = 300)
-        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: throw TnaException("Паспорт не загрузился")
-        val stats = obj["stats"]?.jsonObjectOrNull()
-        val tours = stats?.int("tours") ?: 0
-        val level = TravelerLevel.forTours(tours)
-        val stamps = obj["stamps"]?.arrayOrEmpty()?.mapIndexedNotNull { index, el ->
-            val row = el.jsonObjectOrNull() ?: return@mapIndexedNotNull null
+    private fun stamps(el: kotlinx.serialization.json.JsonElement?): List<Stamp> =
+        el?.arrayOrEmpty()?.mapIndexedNotNull { index, item ->
+            val row = item.jsonObjectOrNull() ?: return@mapIndexedNotNull null
             Stamp(
                 title = row.str("title").orEmpty(),
                 year = row.str("year").orEmpty(),
@@ -359,19 +354,247 @@ class TnaRepository(
                 angle = PassportCopy.stampAngle(index),
             )
         }.orEmpty()
-        val achievements = obj["achievements"]?.arrayOrEmpty()?.mapNotNull { el ->
-            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+
+    private fun achievements(el: kotlinx.serialization.json.JsonElement?): List<Achievement> =
+        el?.arrayOrEmpty()?.mapNotNull { item ->
+            val row = item.jsonObjectOrNull() ?: return@mapNotNull null
             val details = row.str("details").orEmpty()
             Achievement(
                 name = row.str("name").orEmpty(),
                 details = details,
                 icon = row.str("icon") ?: "star",
-                earned = row.bool("earned") == true,
+                earned = row.bool("earned") != false,
                 color = Mappers.hex(row.str("color")),
                 howTo = details,
                 earnedDate = PassportCopy.monthYear(row.str("earned_at")),
             )
         }.orEmpty()
+
+    /// «Мой год с TNA». Null when the year has no finished trips (never a recap of zeroes).
+    suspend fun yearRecap(year: Int? = null): YearRecap? = runCatching {
+        val raw = api.rpc("my_year_recap", buildJsonObject { put("p_year", year) }.toString(), ttlSec = 300)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
+        val tours = obj.int("tours") ?: 0
+        if (tours <= 0) return@runCatching null
+        YearRecap(
+            year = (obj.int("year") ?: java.time.LocalDate.now().year).toString(),
+            tours = tours,
+            km = obj.int("km") ?: 0,
+            newAchievements = obj.int("new_achievements") ?: 0,
+            topDestination = obj.str("top_destination").orEmpty(),
+            topDestinationColors = obj["top_colors"]?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull()?.let(Mappers::hex) }.orEmpty(),
+            stamps = stamps(obj["stamps"]),
+        )
+    }.getOrNull()
+
+    /// Someone else's passport (0079), privacy-filtered by the server.
+    suspend fun publicProfile(userId: UUID): PublicProfile? = runCatching {
+        val raw = api.rpc("public_profile", buildJsonObject { put("p_user", userId.toString()) }.toString(), ttlSec = 300)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
+        val stats = obj["stats"]?.jsonObjectOrNull()
+        val together = obj["together"]?.jsonObjectOrNull()
+        val staff = obj["staff"]?.jsonObjectOrNull()
+        PublicProfile(
+            name = obj.str("name").orEmpty(),
+            city = obj.str("city").orEmpty(),
+            role = obj.str("role") ?: "client",
+            avatarUrl = obj.str("avatar"),
+            memberSinceYear = obj.int("member_since_year"),
+            tours = stats?.int("tours") ?: 0,
+            countries = stats?.int("countries") ?: 0,
+            km = stats?.int("km") ?: 0,
+            days = stats?.int("days") ?: 0,
+            maxAltitude = stats?.int("max_altitude") ?: 0,
+            achievements = achievements(obj["achievements"]),
+            stamps = stamps(obj["stamps"]),
+            togetherCount = together?.int("count") ?: 0,
+            togetherAsGuide = together?.bool("as_guide") == true,
+            togetherTours = together?.get("tours")?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+            departuresLed = staff?.int("departures_led"),
+            directions = staff?.get("directions")?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+        )
+    }.getOrNull()
+
+    suspend fun publicCountries(userId: UUID): Map<String, CountryStatus> = runCatching {
+        val raw = api.rpc("user_countries_public", buildJsonObject { put("p_user", userId.toString()) }.toString(), ttlSec = 300)
+        countryMap(raw)
+    }.getOrDefault(emptyMap())
+
+    suspend fun tnaCodes(userId: UUID): Set<String> = runCatching {
+        val raw = api.rpc("tna_country_codes", buildJsonObject { put("p_user", userId.toString()) }.toString(), ttlSec = 300)
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { it.jsonPrimitiveOrNull()?.uppercase() }.toSet()
+    }.getOrDefault(emptySet())
+
+    private fun countryMap(raw: String): Map<String, CountryStatus> {
+        val map = mutableMapOf<String, CountryStatus>()
+        json.parseToJsonElement(raw).arrayOrEmpty().forEach { el ->
+            val row = el.jsonObjectOrNull() ?: return@forEach
+            val code = row.str("code")?.uppercase() ?: return@forEach
+            CountryStatus.fromRaw(row.str("status").orEmpty())?.let { map[code] = it }
+        }
+        return map
+    }
+
+    /// Find-or-create the 1:1 chat with another member; returns its id.
+    suspend fun ensureDirectChat(userId: UUID): UUID? = runCatching {
+        UUID.fromString(api.rpc("ensure_direct_chat", buildJsonObject { put("p_other", userId.toString()) }.toString()).trim().trim('"'))
+    }.getOrNull()
+
+    /// Guide / curator / manager of this trip chat: may pin and create polls.
+    suspend fun isChatStaff(chatId: UUID): Boolean = runCatching {
+        api.rpc("is_chat_staff", buildJsonObject { put("p_chat", chatId.toString()) }.toString()).trim() == "true"
+    }.getOrDefault(false)
+
+    suspend fun setPinned(messageId: UUID, pinned: Boolean) {
+        runCatching {
+            api.rpc("set_message_pinned", buildJsonObject {
+                put("p_message", messageId.toString())
+                put("p_pinned", pinned)
+            }.toString())
+        }
+    }
+
+    /// Every pinned message of the chat, newest pin first, independent of the history window.
+    suspend fun fetchPinned(chatId: UUID): List<Message> = runCatching {
+        val me = auth.currentUserId()?.toString()
+        val raw = api.get("messages", listOf(
+            "select" to "id,text,kind,media_url,media_name,duration_ms,edited_at,reply_to,album_id,pinned_at,poll,as_company,created_at,user_id," +
+                "author:public_profiles!user_id(name,avatar_url),message_reactions(emoji,user_id)",
+            "chat_id" to "eq.$chatId",
+            "pinned_at" to "not.is.null",
+            "order" to "pinned_at.desc",
+        ), ttlSec = null)
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { message(it.jsonObjectOrNull(), me) }
+    }.getOrDefault(emptyList())
+
+    suspend fun createPoll(chatId: UUID, poll: PollData): UUID {
+        val id = UUID.randomUUID()
+        api.post("messages", buildJsonObject {
+            put("id", id.toString())
+            put("chat_id", chatId.toString())
+            put("text", poll.question)
+            put("kind", "poll")
+            put("poll", buildJsonObject {
+                put("question", poll.question)
+                put("description", poll.description)
+                put("options", buildJsonArray {
+                    poll.options.forEach { o -> add(buildJsonObject { put("id", o.id); put("text", o.text) }) }
+                })
+                put("multiple", poll.multiple)
+                put("anonymous", poll.anonymous)
+                put("add_options", poll.addOptions)
+                put("revote", poll.revote)
+                put("quiz", poll.quiz)
+                put("correct", buildJsonArray { poll.correct.forEach { add(JsonPrimitive(it)) } })
+                put("shuffle", poll.shuffle)
+                put("closes_at", poll.closesAt)
+                put("closed", false)
+                put("rev", 0)
+            })
+        }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
+        runCatching { api.function("notify-message", buildJsonObject { put("message_id", id.toString()) }.toString()) }
+        return id
+    }
+
+    suspend fun votePoll(messageId: UUID, options: List<String>): Boolean = runCatching {
+        api.rpc("vote_poll", buildJsonObject {
+            put("p_message", messageId.toString())
+            put("p_options", buildJsonArray { options.forEach { add(JsonPrimitive(it)) } })
+        }.toString()).trim() == "true"
+    }.getOrDefault(false)
+
+    suspend fun addPollOption(messageId: UUID, text: String) {
+        runCatching {
+            api.rpc("add_poll_option", buildJsonObject { put("p_message", messageId.toString()); put("p_text", text.trim()) }.toString())
+        }
+    }
+
+    suspend fun closePoll(messageId: UUID) {
+        runCatching { api.rpc("close_poll", buildJsonObject { put("p_message", messageId.toString()) }.toString()) }
+    }
+
+    suspend fun pollState(messageId: UUID): PollState? = runCatching {
+        val raw = api.rpc("poll_state", buildJsonObject { put("p_message", messageId.toString()) }.toString())
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
+        PollState(
+            total = obj.int("total") ?: 0,
+            closed = obj.bool("closed") == true,
+            my = obj["my"]?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+            options = obj["options"]?.arrayOrEmpty()?.mapNotNull { el ->
+                val o = el.jsonObjectOrNull() ?: return@mapNotNull null
+                PollState.Opt(
+                    id = o.str("id") ?: return@mapNotNull null,
+                    count = o.int("count") ?: 0,
+                    voters = o["voters"]?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+                )
+            }.orEmpty(),
+        )
+    }.getOrNull()
+
+    /// Voice note or file into chat-media, then the message row (iOS `sendAttachment`).
+    suspend fun sendAttachment(
+        chatId: UUID,
+        bytes: ByteArray,
+        kind: MessageKind,
+        ext: String,
+        contentType: String,
+        name: String? = null,
+        durationMs: Int? = null,
+        messageId: UUID = UUID.randomUUID(),
+    ) {
+        val path = "${chatId.toString().lowercase()}/${messageId.toString().lowercase()}.$ext"
+        val url = api.upload("chat-media", path, bytes, contentType)
+        api.post("messages", buildJsonObject {
+            put("id", messageId.toString())
+            put("chat_id", chatId.toString())
+            put("text", "")
+            put("kind", kind.name.lowercase())
+            put("media_url", url)
+            put("media_name", name)
+            put("duration_ms", durationMs)
+        }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
+        runCatching { api.function("notify-message", buildJsonObject { put("message_id", messageId.toString()) }.toString()) }
+    }
+
+    /// Offline trip pack (`trip_pack`): cached 10 min, stale copy served when offline.
+    suspend fun tripPack(): TripPlan? = runCatching {
+        val raw = api.rpc("trip_pack", ttlSec = 600)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
+        val start = Dates.parseDay(obj.str("starts_on"))
+        val end = Dates.parseDay(obj.str("ends_on"))
+        val itinerary = obj["itinerary"]?.arrayOrEmpty()?.mapNotNull { el ->
+            val d = el.jsonObjectOrNull() ?: return@mapNotNull null
+            (d.int("day") ?: return@mapNotNull null) to d.str("title").orEmpty()
+        }.orEmpty()
+        val dayIndex = obj.int("day_index")
+        TripPlan(
+            tourName = obj.str("tour_name").orEmpty(),
+            dateRange = TripPackMapper.dateRange(start, end),
+            statusLine = TripPackMapper.statusLine(
+                phase = obj.str("phase") ?: "upcoming",
+                dayIndex = dayIndex,
+                totalDays = obj.int("total_days") ?: itinerary.size,
+                todayTitle = itinerary.firstOrNull { it.first == dayIndex }?.second,
+                start = start,
+            ),
+            colors = listOf(Mappers.hex(obj.str("color_start") ?: "FF6B3D"), Mappers.hex(obj.str("color_end") ?: "8B1E00")),
+            schedule = itinerary.map { (day, title) -> TripScheduleItem("День $day", title, TripPackMapper.icon(title)) },
+            contacts = obj["contacts"]?.arrayOrEmpty()?.mapIndexedNotNull { index, el ->
+                val c = el.jsonObjectOrNull() ?: return@mapIndexedNotNull null
+                TripContact(UUID.randomUUID(), c.str("role").orEmpty(), c.str("phone").orEmpty(), index)
+            }.orEmpty(),
+            dayIndex = dayIndex,
+        )
+    }.getOrNull()
+
+    suspend fun fetchPassport(displayName: String): PassportData {
+        val raw = api.rpc("my_passport", ttlSec = 300)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: throw TnaException("Паспорт не загрузился")
+        val stats = obj["stats"]?.jsonObjectOrNull()
+        val tours = stats?.int("tours") ?: 0
+        val level = TravelerLevel.forTours(tours)
+        val stamps = stamps(obj["stamps"])
+        val achievements = achievements(obj["achievements"])
         val places = obj["places"]?.arrayOrEmpty()?.mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
             val name = row.str("name") ?: return@mapNotNull null
@@ -548,13 +771,6 @@ class TnaRepository(
         }
     }
 
-    suspend fun votePoll(messageId: UUID, optionId: String): Boolean {
-        val raw = api.rpc("vote_poll", buildJsonObject {
-            put("p_message", messageId.toString())
-            put("p_options", buildJsonArray { add(JsonPrimitive(optionId)) })
-        }.toString())
-        return raw.trim() == "true"
-    }
 
     suspend fun editMessage(id: UUID, text: String) {
         api.patch("messages", listOf("id" to "eq.${id.toString().lowercase()}"), buildJsonObject {
@@ -604,6 +820,8 @@ class TnaRepository(
                 else -> MessageKind.Text
             },
             mediaUrl = row.str("media_url"),
+            mediaName = row.str("media_name"),
+            durationMs = row.int("duration_ms"),
             edited = row.str("edited_at") != null,
             reactions = reactions(row["message_reactions"]?.arrayOrEmpty(), me),
             createdAt = parseInstant(created) ?: Instant.now(),
@@ -657,7 +875,35 @@ class TnaRepository(
             patronymic = obj.str("patronymic").orEmpty(),
             city = obj.str("city").orEmpty(),
             birthday = obj.str("birthday").orEmpty(),
+            email = obj.str("email").orEmpty(),
+            emailVerified = obj.bool("email_verified") == true,
+            doc = identityDoc(obj),
         )
+    }
+
+    suspend fun saveProfile(draft: ProfileDraft) {
+        val uid = auth.currentUserId() ?: return
+        api.patch("profiles", listOf("id" to "eq.${uid.toString().lowercase()}"), buildJsonObject {
+            put("last_name", draft.lastName.trim().ifBlank { null })
+            put("first_name", draft.firstName.trim().ifBlank { null })
+            put("patronymic", draft.patronymic.trim().ifBlank { null })
+            put("city", draft.city.trim().ifBlank { null })
+            put("birthday", draft.birthday.trim().ifBlank { null })
+            putDoc(draft.doc)
+        }.toString())
+    }
+
+    /// Display name: RPC mirrors it into customers.name; if the RPC is unavailable, write
+    /// profiles.name directly (that is what chats, rating and roster read), like iOS.
+    suspend fun setName(name: String) {
+        try {
+            api.rpc("set_my_name", buildJsonObject { put("p_name", name) }.toString())
+        } catch (e: Exception) {
+            val uid = auth.currentUserId() ?: throw e
+            api.patch("profiles", listOf("id" to "eq.${uid.toString().lowercase()}"), buildJsonObject {
+                put("name", name)
+            }.toString())
+        }
     }
 
     /// One path per user, overwritten; `?v=` busts the CDN and image caches.
@@ -681,16 +927,21 @@ class TnaRepository(
         json.parseToJsonElement(raw).arrayOrEmpty().firstOrNull()?.jsonObjectOrNull()?.str("avatar_url")
     }.getOrNull()
 
-    suspend fun saveProfile(draft: ProfileDraft) {
-        val uid = auth.currentUserId() ?: return
-        api.patch("profiles", listOf("id" to "eq.${uid.toString().lowercase()}"), buildJsonObject {
-            put("last_name", draft.lastName.trim().ifBlank { null })
-            put("first_name", draft.firstName.trim().ifBlank { null })
-            put("patronymic", draft.patronymic.trim().ifBlank { null })
-            put("city", draft.city.trim().ifBlank { null })
-            put("birthday", draft.birthday.trim().ifBlank { null })
-        }.toString())
-    }
+    /// Email is verified by a code (verify-email edge function), never saved directly.
+    suspend fun requestEmailCode(email: String): EmailVerifyResult = verifyEmail(buildJsonObject {
+        put("action", "request")
+        put("email", email.trim())
+    }.toString())
+
+    suspend fun confirmEmailCode(code: String): EmailVerifyResult = verifyEmail(buildJsonObject {
+        put("action", "confirm")
+        put("code", code.trim())
+    }.toString())
+
+    private suspend fun verifyEmail(body: String): EmailVerifyResult = runCatching {
+        val obj = json.parseToJsonElement(api.function("verify-email", body)).jsonObjectOrNull()
+        EmailVerifyResult.from(obj?.bool("ok"), obj?.str("error"))
+    }.getOrDefault(EmailVerifyResult.Error)
 
     suspend fun fetchPrefs(): NotificationPrefs {
         val raw = api.get("notification_prefs", listOf(
@@ -724,7 +975,7 @@ class TnaRepository(
 
     suspend fun fetchCompanions(): List<TravelCompanion> {
         val raw = api.get("travel_companions", listOf(
-            "select" to "id,full_name,last_name,first_name,patronymic,birthday",
+            "select" to "id,full_name,last_name,first_name,patronymic,birthday,phone,doc_type,doc_number,doc_citizenship,doc_issued,doc_expiry,doc_issued_by,doc_registration",
             "order" to "created_at.desc",
         ), ttlSec = null)
         return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
@@ -744,19 +995,45 @@ class TnaRepository(
                 firstName = first,
                 patronymic = row.str("patronymic").orEmpty(),
                 birthday = row.str("birthday"),
+                phone = row.str("phone").orEmpty(),
+                doc = identityDoc(row),
             )
         }
     }
 
+    private fun identityDoc(row: JsonObject) = IdentityDoc(
+        type = row.str("doc_type").orEmpty(),
+        number = row.str("doc_number").orEmpty(),
+        citizenship = row.str("doc_citizenship").orEmpty(),
+        issued = row.str("doc_issued"),
+        expiry = row.str("doc_expiry"),
+        issuedBy = row.str("doc_issued_by").orEmpty(),
+        registration = row.str("doc_registration").orEmpty(),
+    )
+
+    /// Document columns as iOS writes them: domestic-only fields are cleared for other
+    /// kinds, expiry only for a foreign passport, citizenship defaults to Russia.
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putDoc(doc: IdentityDoc) {
+        val kind = doc.kind
+        put("doc_type", doc.type.trim().ifBlank { null })
+        put("doc_number", doc.number.trim().ifBlank { null })
+        put("doc_citizenship", doc.citizenship.trim().ifBlank { Citizenship.defaultValue })
+        put("doc_issued", doc.issued?.trim()?.ifBlank { null })
+        put("doc_expiry", if (kind?.hasExpiry == true) doc.expiry?.trim()?.ifBlank { null } else null)
+        put("doc_issued_by", if (kind?.hasInternalFields == true) doc.issuedBy.trim().ifBlank { null } else null)
+        put("doc_registration", if (kind?.hasInternalFields == true) doc.registration.trim().ifBlank { null } else null)
+    }
+
     suspend fun saveCompanion(person: TravelCompanion) {
-        val full = person.fullName
         api.post("travel_companions", buildJsonObject {
             put("id", person.id.toString())
-            put("full_name", full)
+            put("full_name", person.fullName)
             put("last_name", person.lastName.trim().ifBlank { null })
             put("first_name", person.firstName.trim().ifBlank { null })
             put("patronymic", person.patronymic.trim().ifBlank { null })
             put("birthday", person.birthday?.trim()?.ifBlank { null })
+            put("phone", person.phone.trim().ifBlank { null })
+            putDoc(person.doc)
         }.toString(), prefer = "resolution=merge-duplicates,return=minimal")
     }
 
@@ -859,6 +1136,9 @@ class TnaRepository(
             addOptions = row.bool("add_options") == true,
             revote = row.bool("revote") != false,
             quiz = row.bool("quiz") == true,
+            correct = row["correct"]?.arrayOrEmpty()?.mapNotNull { it.jsonPrimitiveOrNull() }.orEmpty(),
+            shuffle = row.bool("shuffle") == true,
+            closesAt = row.str("closes_at"),
             closed = row.bool("closed") == true,
             rev = row.int("rev") ?: 0,
         )
@@ -931,10 +1211,35 @@ object CompanionFormat {
         return (listOf(header) + blocks).joinToString("\n————————\n")
     }
 
+    /// One person: name, then ДР → тел → гражданство → документ → выдан / кем / прописка → до.
     fun block(index: Int, c: TravelCompanion): String {
         val lines = mutableListOf("$index. ${c.fullName.trim().ifEmpty { "Без имени" }}")
-        c.birthday?.takeIf { it.isNotBlank() }?.let { lines += "ДР: ${BonusCopy.shortDate(it)}" }
-        c.document.trim().takeIf { it.isNotEmpty() }?.let { lines += "Документ: $it" }
+        fun row(label: String, value: String?) {
+            val v = value?.trim().orEmpty()
+            if (v.isNotEmpty()) lines += "$label: $v"
+        }
+        c.birthday?.let { row("ДР", dateStr(it)) }
+        if (c.phone.isNotBlank()) row("Тел", PhoneNumber.pretty(c.phone))
+        row("Гражд", c.doc.citizenship)
+        c.doc.kind?.let { kind ->
+            val num = c.doc.number.trim()
+            row(docLabel(kind), num.ifEmpty { kind.title })
+            c.doc.issued?.let { row("Выдан", dateStr(it)) }
+            if (kind.hasInternalFields) {
+                row("Кем", c.doc.issuedBy)
+                row("Прописка", c.doc.registration)
+            }
+            if (kind.hasExpiry) c.doc.expiry?.let { row("До", dateStr(it)) }
+        }
         return lines.joinToString("\n")
     }
+
+    private fun docLabel(kind: DocKind) = when (kind) {
+        DocKind.PassportRF -> "Паспорт РФ"
+        DocKind.PassportIntl -> "Загран"
+        DocKind.BirthCert -> "Св-во о рожд."
+    }
+
+    private fun dateStr(iso: String): String =
+        Dates.parseDay(iso)?.let { "%02d.%02d.%04d".format(it.dayOfMonth, it.monthValue, it.year) } ?: iso
 }

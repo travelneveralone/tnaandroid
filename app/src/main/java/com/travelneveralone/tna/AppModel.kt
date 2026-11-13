@@ -180,6 +180,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             // Never read or write the placeholder: resolve the real support thread first.
             val live = resolveThread(thread)
             if (live.id == ChatThread.supportPlaceholder.id) return@launch
+            loadChatExtras(live)
             messages = runCatching { repo.history(live.id) }.getOrElse {
                 if (AppConfig.useMock && live.isSupport) Mock.managerChat else emptyList()
             }
@@ -294,13 +295,142 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun vote(messageId: UUID, optionId: String) {
+    // MARK: chat extras (polls, pins, attachments) — iOS ChatViewModel parity
+
+    var pollStates by mutableStateOf<Map<UUID, PollState>>(emptyMap())
+    var pinned by mutableStateOf<List<Message>>(emptyList())
+    var chatStaff by mutableStateOf(false)
+    var uploading by mutableStateOf(false)
+    var chatNotice by mutableStateOf<String?>(null)
+
+    /// Pins and the staff flag for the open chat (staff = may pin and create polls).
+    fun loadChatExtras(thread: ChatThread) = viewModelScope.launch {
+        pinned = emptyList()
+        chatStaff = false
+        if (thread.id == ChatThread.supportPlaceholder.id) return@launch
+        pinned = repo.fetchPinned(thread.id)
+        chatStaff = thread.kind == ChatThreadKind.Trip && repo.isChatStaff(thread.id)
+    }
+
+    fun refreshPoll(messageId: UUID) = viewModelScope.launch {
+        repo.pollState(messageId)?.let { pollStates = pollStates + (messageId to it) }
+    }
+
+    fun vote(messageId: UUID, options: List<String>) {
         viewModelScope.launch {
-            runCatching { repo.votePoll(messageId, optionId) }
-            val id = openChat?.id ?: return@launch
-            messages = runCatching { repo.history(id) }.getOrDefault(messages)
+            val ok = repo.votePoll(messageId, options)
+            if (!ok) chatNotice = "Голос не принят — опрос уже закрыт или изменился"
+            refreshPoll(messageId)
         }
     }
+
+    fun addPollOption(messageId: UUID, text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            repo.addPollOption(messageId, text)
+            reloadOpenChat()
+            refreshPoll(messageId)
+        }
+    }
+
+    fun closePoll(messageId: UUID) {
+        viewModelScope.launch {
+            repo.closePoll(messageId)
+            reloadOpenChat()
+            refreshPoll(messageId)
+        }
+    }
+
+    fun createPoll(poll: PollData) {
+        val thread = openChat ?: return
+        viewModelScope.launch {
+            val live = resolveThread(thread)
+            runCatching { repo.createPoll(live.id, poll) }
+                .onFailure { chatNotice = "Опрос не отправился — проверь связь" }
+            reloadOpenChat()
+        }
+    }
+
+    fun setPinned(message: Message, pin: Boolean) {
+        viewModelScope.launch {
+            repo.setPinned(message.id, pin)
+            val id = openChat?.id ?: return@launch
+            pinned = repo.fetchPinned(id)
+            reloadOpenChat()
+        }
+    }
+
+    /// Photo-less attachments: voice notes and files. Online only, like iOS.
+    fun sendAttachment(bytes: ByteArray, kind: MessageKind, ext: String, contentType: String, name: String? = null, durationMs: Int? = null) {
+        val thread = openChat ?: return
+        if (!network.isOnline) {
+            chatNotice = "Вложения отправляются только онлайн"
+            return
+        }
+        uploading = true
+        viewModelScope.launch {
+            val live = resolveThread(thread)
+            runCatching { repo.sendAttachment(live.id, bytes, kind, ext, contentType, name, durationMs) }
+                .onFailure { chatNotice = "Не отправилось — можно повторить" }
+            uploading = false
+            reloadOpenChat()
+        }
+    }
+
+    private suspend fun reloadOpenChat() {
+        val id = openChat?.id ?: return
+        runCatching { repo.history(id) }.onSuccess { fresh ->
+            val pending = messages.filter { it.status != MessageStatus.Sent && fresh.none { row -> row.id == it.id } }
+            messages = fresh + pending
+        }
+    }
+
+    // MARK: mini-profile and direct messages
+
+    var miniProfile by mutableStateOf<MiniProfile?>(null)
+
+    fun openMiniProfile(profile: MiniProfile) {
+        miniProfile = profile
+    }
+
+    /// «Написать»: find-or-create the 1:1 chat and open it.
+    fun writeTo(profile: MiniProfile) {
+        miniProfile = null
+        requireAccount {
+            viewModelScope.launch {
+                val chatId = repo.ensureDirectChat(profile.userId)
+                if (chatId == null) {
+                    chatNotice = "Не получилось открыть переписку"
+                    return@launch
+                }
+                openTour = null
+                sheet = null
+                tab = AppTab.Chats
+                loadChats().join()
+                val thread = threads.firstOrNull { it.id == chatId } ?: ChatThread(
+                    id = chatId, title = profile.name, subtitle = "личные сообщения", lastMessage = "", time = "",
+                    unread = 0, icon = "person.fill", colors = emptyList(), isPinned = false,
+                    kind = ChatThreadKind.Direct, otherUserId = profile.userId, avatarUrl = profile.avatarUrl,
+                )
+                openThread(thread)
+            }
+        }
+    }
+
+    fun mayWriteTo(profile: MiniProfile): Boolean = policy.allows(role, UserRole.fromRaw(profile.role))
+
+    // MARK: year recap and trip pack
+
+    var recap by mutableStateOf<YearRecap?>(null)
+    var recapShown by mutableStateOf(false)
+    var tripPlan by mutableStateOf<TripPlan?>(null)
+    var tripModeShown by mutableStateOf(false)
+
+    fun openTripMode() {
+        tripModeShown = true
+        viewModelScope.launch { repo.tripPack()?.let { tripPlan = it } }
+    }
+
 
     private suspend fun resolveThread(thread: ChatThread): ChatThread {
         if (!thread.isSupport || thread.id != ChatThread.supportPlaceholder.id) return thread
@@ -325,6 +455,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         val name = account.name.ifBlank { profile.displayName }
         runCatching { repo.fetchPassport(name) }.onSuccess { passport = it }
+        recap = repo.yearRecap()
     }
 
     fun loadProfileBits() = viewModelScope.launch {
@@ -335,7 +466,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         bonusLines = repo.bonusLines()
         runCatching { repo.fetchProfile() }.onSuccess { draft ->
             profile = draft
-            if (draft.displayName.isNotBlank()) account.name = draft.displayName
+            if (account.name.isBlank() && draft.displayName.isNotBlank()) account.name = draft.displayName
         }
         runCatching { repo.fetchPrefs() }.onSuccess { prefsState = it }
         avatarUrl = repo.currentAvatarUrl()
@@ -370,17 +501,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (loaded != null) companions = loaded else if (companions.isEmpty()) companions = cachedCompanions()
     }
 
-    fun addCompanion(last: String, first: String) {
-        val person = TravelCompanion(lastName = last.trim(), firstName = first.trim())
-        companions = listOf(person) + companions
+    /// Saves one companion; false keeps the editor open with «Не удалось сохранить».
+    suspend fun saveCompanion(person: TravelCompanion): Boolean {
+        if (runCatching { repo.saveCompanion(person) }.isFailure) return false
+        companions = runCatching { repo.fetchCompanions() }.getOrNull()
+            ?: (listOf(person) + companions.filter { it.id != person.id })
         persistCompanions(companions)
-        viewModelScope.launch {
-            val saved = runCatching { repo.saveCompanion(person); repo.fetchCompanions() }.getOrNull()
-            if (saved != null) {
-                companions = saved
-                persistCompanions(saved)
-            }
-        }
+        return true
     }
 
     fun removeCompanion(id: UUID) {
@@ -394,10 +521,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { runCatching { repo.savePrefs(next) } }
     }
 
-    fun saveProfile(draft: ProfileDraft) {
-        profile = draft
-        if (draft.displayName.isNotBlank()) account.name = draft.displayName
-        viewModelScope.launch { runCatching { repo.saveProfile(draft) } }
+    /// Name first (it is what chats, rating and roster show), then the rest of the profile.
+    /// Returns a user-facing error or null.
+    suspend fun saveProfileNow(draft: ProfileDraft, displayName: String): String? {
+        val nameError = runCatching { repo.setName(displayName) }.exceptionOrNull()
+        if (nameError == null) account.name = displayName
+        val saved = runCatching { repo.saveProfile(draft) }.isSuccess
+        if (saved) profile = draft
+        return when {
+            nameError != null -> "Имя не сохранилось: ${nameError.message ?: "нет связи"}"
+            !saved -> "Не удалось сохранить — нет связи"
+            else -> null
+        }
+    }
+
+    /// A picked photo goes through the crop screen before upload (iOS AvatarCropSheet).
+    var cropSource by mutableStateOf<android.graphics.Bitmap?>(null)
+
+    fun pickAvatar(bytes: ByteArray) {
+        viewModelScope.launch {
+            val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { decodeUpright(bytes) }
+            if (bitmap != null) cropSource = bitmap else chatNotice = "Не удалось прочитать фото"
+        }
     }
 
     fun uploadAvatar(bytes: ByteArray) {
@@ -584,6 +729,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         bonus = null
         bonusLines = emptyList()
         passport = PassportData.empty
+        recap = null
+        tripPlan = null
         threads = emptyList()
         loadChats()
     }
@@ -603,8 +750,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private fun companionPrefs() =
         getApplication<Application>().getSharedPreferences("tna.companions", Context.MODE_PRIVATE)
 
+    // Offline copy of companions: one tab-separated row each, docs included.
     private fun persistCompanions(list: List<TravelCompanion>) {
-        val raw = list.joinToString("\n") { "${it.id}\t${it.lastName}\t${it.firstName}\t${it.patronymic}" }
+        fun clean(v: String?) = v.orEmpty().replace('\t', ' ').replace('\n', ' ')
+        val raw = list.joinToString("\n") { c ->
+            listOf(
+                c.id.toString(), c.lastName, c.firstName, c.patronymic, c.birthday, c.phone,
+                c.doc.type, c.doc.number, c.doc.citizenship, c.doc.issued, c.doc.expiry, c.doc.issuedBy, c.doc.registration,
+            ).joinToString("\t") { clean(it) }
+        }
         companionPrefs().edit().putString("rows", raw).apply()
     }
 
@@ -613,7 +767,20 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             val parts = line.split('\t')
             if (parts.size < 3) return@mapNotNull null
             val id = runCatching { UUID.fromString(parts[0]) }.getOrNull() ?: return@mapNotNull null
-            TravelCompanion(id = id, lastName = parts[1], firstName = parts[2], patronymic = parts.getOrElse(3) { "" })
+            fun at(i: Int) = parts.getOrElse(i) { "" }
+            TravelCompanion(
+                id = id,
+                lastName = at(1),
+                firstName = at(2),
+                patronymic = at(3),
+                birthday = at(4).ifBlank { null },
+                phone = at(5),
+                doc = IdentityDoc(
+                    type = at(6), number = at(7), citizenship = at(8),
+                    issued = at(9).ifBlank { null }, expiry = at(10).ifBlank { null },
+                    issuedBy = at(11), registration = at(12),
+                ),
+            )
         }.toList()
 
     fun launch(block: suspend () -> Unit) {

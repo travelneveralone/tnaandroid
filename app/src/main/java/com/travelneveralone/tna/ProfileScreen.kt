@@ -216,7 +216,7 @@ private fun ProfileHeader(app: AppModel) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { app.uploadAvatar(it) }
+        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { app.pickAvatar(it) }
     }
     Row(Modifier.statusBarsPadding().padding(horizontal = 20.dp).padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.pressable(0.95f, enabled = registered) { picker.launch("image/*") }) {
@@ -337,7 +337,7 @@ private fun TripsBlock(app: AppModel) {
             Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TripAction("Программа", Icons.AutoMirrored.Filled.ListAlt, Modifier.weight(1f)) { app.openProgram(next) }
                 TripAction("Чат группы", Icons.AutoMirrored.Filled.Chat, Modifier.weight(1f)) {
-                    next.chatId?.let { app.openGroupChat(it) } ?: run { app.sheet = Sheet.TripMode(next) }
+                    next.chatId?.let { app.openGroupChat(it) } ?: app.openTripMode()
                 }
             }
         }
@@ -348,7 +348,7 @@ private fun TripsBlock(app: AppModel) {
                     others.forEach { trip ->
                         Row(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.surface)
-                                .pressable(0.98f) { trip.chatId?.let { app.openGroupChat(it) } ?: run { app.sheet = Sheet.TripMode(trip) } }
+                                .pressable(0.98f) { trip.chatId?.let { app.openGroupChat(it) } ?: app.openTripMode() }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

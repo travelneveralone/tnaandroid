@@ -206,7 +206,8 @@ data class TravelCompanion(
     val firstName: String,
     val patronymic: String = "",
     val birthday: String? = null,
-    val document: String = "",
+    val phone: String = "",
+    val doc: IdentityDoc = IdentityDoc(),
 ) {
     val fullName: String
         get() = listOf(lastName, firstName, patronymic).filter { it.isNotBlank() }.joinToString(" ")
@@ -397,6 +398,9 @@ data class ProfileDraft(
     val patronymic: String = "",
     val city: String = "",
     val birthday: String = "",
+    val email: String = "",
+    val emailVerified: Boolean = false,
+    val doc: IdentityDoc = IdentityDoc(),
 ) {
     val displayName: String
         get() = listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")

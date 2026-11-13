@@ -42,10 +42,12 @@ MVVM, одна точка сборки зависимостей в `AppModel` (�
 - `Theme.kt` ← `Core/DesignSystem` (палитра, `displayStyle`, `pressable` вместо `PressableStyle`, `shimmer`, `sfIcon` — SF Symbol из бэкенда → Material-иконка, `TourCover`, `Avatar`, `FireBadge`, `stampBorder`)
 - `Screens.kt` ← `App/` (Root, Splash, TabBar, плашка «Офлайн/Нет связи») + `Onboarding`, `SheetHost`
 - `CatalogScreen.kt` ← `Catalog/` (+ `TourCards`), `TourDetailScreen.kt` ← `TourDetail/`, `BookingSheet.kt` ← `Booking/`
-- `PassportScreen.kt` ← `Passport/`, `ChatScreens.kt` ← `Chats/`, `ProfileScreen.kt` ← `Profile/ProfileView`
-- `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Companions, Countries, EditProfile, Compass, Schedule, Trip)
+- `PassportScreen.kt` ← `Passport/`, `ChatScreens.kt` + `ChatExtras.kt` ← `Chats/` (опросы, закрепы, голосовые, файлы), `ProfileScreen.kt` ← `Profile/ProfileView`
+- `SocialScreens.kt` ← `Profile/MiniProfileSheet`, `Passport/YearRecapView` + `PassportShareCard`, `Trip/TripView`
+- `ProfileEditor.kt` ← `Profile/EditProfileSheet`, `CitizenshipPicker`, `CompanionsView`, `AvatarCropSheet`
+- `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Countries, Compass, Schedule, Trip)
 - `Media.kt` — полноэкранный просмотр фото
 
 Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, — только Compose state (`mutableStateOf`), иначе экран не перерисуется.
 
-Пока нет на Android (есть в iOS): видео на карточках карусели, голосовые, создание опросов и подсчёт голосов, закрепы в чате, мини-профиль из рейтинга, «Итоги года» и шаринг паспорта, документы у попутчиков и в профиле, трип-пак (рейсы, чек-лист), обрезка аватарки.
+Пока нет на Android (есть в iOS): видео на карточках карусели.

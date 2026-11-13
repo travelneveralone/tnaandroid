@@ -33,6 +33,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Poll
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -289,8 +297,30 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
         app.sendImage(bytes)
     }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val resolver = context.contentResolver
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
+        val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        } ?: "Файл"
+        val type = resolver.getType(uri) ?: "application/octet-stream"
+        val ext = name.substringAfterLast('.', "bin").lowercase()
+        app.sendAttachment(bytes, MessageKind.File, ext, type, name)
+    }
+    val recorder = remember { VoiceRecorder(context) }
+    var recording by remember { mutableStateOf(false) }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) recording = recorder.start() else app.chatNotice = "Нет доступа к микрофону — включи его в настройках Android"
+    }
+    var attachMenu by remember { mutableStateOf(false) }
+    var composingPoll by remember { mutableStateOf(false) }
+    var pinIndex by remember(thread.id) { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     var viewer by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var menuFor by remember { mutableStateOf<UUID?>(null) }
+    DisposableEffect(Unit) { onDispose { recorder.cancel() } }
     BackHandler { app.cancelCompose(); app.openChat = null }
     // Poll the open chat (Android has no realtime socket yet); keep unsent messages.
     LaunchedEffect(thread.id) {
@@ -305,6 +335,29 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     val showsAvatars = thread.kind == ChatThreadKind.Trip || thread.kind == ChatThreadKind.Community
     Column(Modifier.fillMaxSize().background(TnaColor.bg).imePadding()) {
         ChatHeader(app, thread)
+        if (app.pinned.isNotEmpty()) {
+            val pins = app.pinned
+            val active = pinIndex.coerceIn(0, pins.lastIndex)
+            PinnedBar(
+                pins = pins,
+                activeIndex = active,
+                staff = app.chatStaff,
+                onTap = {
+                    // Jump to the pin (newest first in the list), then show the next one.
+                    val target = pins[active]
+                    val rows = messages.albumGrouped().asReversed()
+                    val index = rows.indexOfFirst { group -> group.any { it.id == target.id } }
+                    if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                    pinIndex = (active + 1) % pins.size
+                },
+                onUnpin = { app.setPinned(it, false) },
+            )
+        }
+        app.chatNotice?.let { notice ->
+            LaunchedEffect(notice) { delay(3500); app.chatNotice = null }
+            Text(notice, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().background(TnaColor.ink.copy(alpha = 0.9f)).padding(horizontal = 16.dp, vertical = 8.dp))
+        }
         Box(Modifier.weight(1f)) {
             if (messages.isEmpty()) {
                 EmptyChatState(thread)
@@ -312,6 +365,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 val rows = messages.albumGrouped()
                 LazyColumn(
                     Modifier.fillMaxSize(),
+                    state = listState,
                     reverseLayout = true,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -325,9 +379,15 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                         val first = older == null || !sameGroup(older, group.first())
                         val last = newer == null || !sameGroup(message, newer)
                         val author = if (!thread.isSupport && !message.isMine && first) message.author.ifBlank { "Участник" } else null
+                        val openAuthor = {
+                            message.authorId?.takeIf { !message.isMine && !message.asCompany && !thread.isSupport }?.let { uid ->
+                                app.openMiniProfile(MiniProfile(uid, message.author, avatarUrl = message.authorAvatarUrl))
+                            }
+                            Unit
+                        }
                         Row(verticalAlignment = Alignment.Bottom) {
                             if (showsAvatars && !message.isMine) {
-                                Box(Modifier.width(32.dp)) {
+                                Box(Modifier.width(32.dp).pressable(0.9f, onClick = openAuthor)) {
                                     if (last) Avatar(message.authorAvatarUrl, message.author, 28)
                                 }
                                 Spacer(Modifier.width(6.dp))
@@ -336,11 +396,12 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                                 if (group.size >= 2) {
                                     AlbumBubble(group, author) { i -> viewer = group.mapNotNull { it.mediaUrl } to i }
                                 } else if (message.kind == MessageKind.Poll && message.poll != null) {
-                                    PollBubble(message) { option -> app.vote(message.id, option) }
+                                    PollBubble(app, message) { menuFor = message.id }
                                 } else {
                                     MessageBubble(
                                         message = message,
                                         authorName = author,
+                                        onAuthorTap = openAuthor,
                                         quoted = message.replyTo?.let { id -> messages.firstOrNull { it.id == id } },
                                         first = first,
                                         onLongPress = { menuFor = message.id },
@@ -361,9 +422,43 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 }
             }
         }
-        InputBar(app) { picker.launch("image/*") }
+        Box {
+            InputBar(
+                app,
+                recording = recording,
+                onAttach = { attachMenu = true },
+                onMic = {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (granted) recording = recorder.start() else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
+                onCancelRecording = { recorder.cancel(); recording = false },
+                onSendRecording = {
+                    recording = false
+                    recorder.stop()?.let { (file, ms) ->
+                        val bytes = file.readBytes()
+                        app.sendAttachment(bytes, MessageKind.Audio, "m4a", "audio/m4a", null, ms)
+                        file.delete()
+                    }
+                },
+            )
+            DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }, containerColor = TnaColor.surface) {
+                DropdownMenuItem(text = { Text("Фото") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; picker.launch("image/*") })
+                DropdownMenuItem(text = { Text("Файл") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { attachMenu = false; filePicker.launch("*/*") })
+                if (thread.kind == ChatThreadKind.Trip) {
+                    DropdownMenuItem(text = { Text("Опрос") }, leadingIcon = { Icon(Icons.Filled.Poll, null) }, onClick = { attachMenu = false; composingPoll = true })
+                }
+                if (thread.isSupport && app.companions.isNotEmpty()) {
+                    DropdownMenuItem(text = { Text("Данные для билета") }, leadingIcon = { Icon(Icons.Filled.Badge, null) }, onClick = {
+                        attachMenu = false
+                        app.chatDraft = CompanionFormat.message(app.companions)
+                    })
+                }
+            }
+        }
     }
     viewer?.let { (urls, start) -> ImageViewerDialog(urls, start) { viewer = null } }
+    if (composingPoll) PollComposerSheet(onDismiss = { composingPoll = false }) { app.createPoll(it) }
 }
 
 private fun sameGroup(a: Message, b: Message): Boolean =
@@ -442,6 +537,7 @@ private fun EmptyChatState(thread: ChatThread) {
 private fun MessageBubble(
     message: Message,
     authorName: String?,
+    onAuthorTap: () -> Unit = {},
     quoted: Message?,
     first: Boolean,
     onLongPress: () -> Unit,
@@ -476,7 +572,7 @@ private fun MessageBubble(
         ) {
             if (authorName != null) {
                 Text(authorName, color = authorColor(authorName), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                    modifier = Modifier.padding(horizontal = if (isImage) 8.dp else 0.dp))
+                    modifier = Modifier.padding(horizontal = if (isImage) 8.dp else 0.dp).pressable(0.97f, onClick = onAuthorTap))
             }
             quoted?.let { QuotedPreview(it, mine) }
             when (message.kind) {
@@ -510,12 +606,22 @@ private fun MessageBubble(
                     }
                     if (message.text.isNotBlank()) Text(message.text, color = ink, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 8.dp))
                 }
-                MessageKind.File, MessageKind.Audio -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                MessageKind.Audio -> {
+                    AudioBubble(message.mediaUrl, message.durationMs, mine)
+                    Row(Modifier.align(Alignment.End)) { TimeMeta(message, if (mine) Color.White.copy(alpha = 0.7f) else TnaColor.subtle) }
+                }
+                MessageKind.File -> {
+                    val context = LocalContext.current
+                    Row(
+                        Modifier.pressable(0.97f) {
+                            message.mediaUrl?.let { url -> runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(Icons.Filled.InsertDriveFile, null, tint = ink, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(message.mediaName ?: if (message.kind == MessageKind.Audio) "Голосовое" else "Файл", color = ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(message.mediaName ?: "Файл", color = ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("Открыть", color = ink.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
@@ -617,37 +723,6 @@ private fun AlbumBubble(messages: List<Message>, authorName: String?, onTap: (In
     }
 }
 
-@Composable
-private fun PollBubble(message: Message, onVote: (String) -> Unit) {
-    val poll = message.poll ?: return
-    val shape = RoundedCornerShape(18.dp)
-    Column(
-        Modifier.fillMaxWidth().padding(top = 6.dp).clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(if (poll.quiz) "ВИКТОРИНА" else "ОПРОС", color = TnaColor.accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-        Text(poll.question, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        poll.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = TnaColor.subtle, fontSize = 13.sp) }
-        poll.options.forEach { option ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(TnaColor.elevated)
-                    .pressable(0.98f, enabled = !poll.closed) { onVote(option.id) }.padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(18.dp).clip(CircleShape).border(2.dp, TnaColor.accent.copy(alpha = 0.6f), CircleShape))
-                Spacer(Modifier.width(10.dp))
-                Text(option.text, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-        Text(
-            listOfNotNull(if (poll.anonymous) "анонимный" else null, if (poll.multiple) "несколько ответов" else null, if (poll.closed) "завершён" else null).joinToString(" · ").ifBlank { message.time },
-            color = TnaColor.subtle,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
 /// Long-press menu: reactions on top, then the actions iOS offers for this message.
 @Composable
 private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, context: Context, onDismiss: () -> Unit) {
@@ -671,6 +746,14 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
         if (message.status == MessageStatus.Failed && message.kind == MessageKind.Text) {
             DropdownMenuItem(text = { Text("Повторить") }, leadingIcon = { Icon(Icons.Filled.Refresh, null) }, onClick = { onDismiss(); app.retry(message) })
         }
+        if (app.chatStaff && thread.kind == ChatThreadKind.Trip && message.status == MessageStatus.Sent) {
+            val isPinned = message.pinnedAt != null || app.pinned.any { it.id == message.id }
+            DropdownMenuItem(
+                text = { Text(if (isPinned) "Открепить" else "Закрепить") },
+                leadingIcon = { Icon(Icons.Filled.PushPin, null) },
+                onClick = { onDismiss(); app.setPinned(message, !isPinned) },
+            )
+        }
         if (message.isMine && message.kind == MessageKind.Text && message.status == MessageStatus.Sent) {
             DropdownMenuItem(text = { Text("Редактировать") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { onDismiss(); app.startEditing(message) })
         }
@@ -685,7 +768,14 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
 }
 
 @Composable
-private fun InputBar(app: AppModel, onAttach: () -> Unit) {
+private fun InputBar(
+    app: AppModel,
+    recording: Boolean,
+    onAttach: () -> Unit,
+    onMic: () -> Unit,
+    onCancelRecording: () -> Unit,
+    onSendRecording: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth().background(TnaColor.bg.copy(alpha = 0.97f))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(TnaColor.stroke))
         Column(Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -695,11 +785,18 @@ private fun InputBar(app: AppModel, onAttach: () -> Unit) {
             app.replyingTo?.let { m ->
                 ComposeBanner(Icons.AutoMirrored.Filled.Reply, "Ответ · ${m.author.ifBlank { "Участник" }}", if (m.kind == MessageKind.Text) m.text else "вложение") { app.cancelCompose() }
             }
+            if (recording) {
+                RecordingBar(onCancel = onCancelRecording, onSend = onSendRecording)
+                return@Column
+            }
             Row(verticalAlignment = Alignment.Bottom) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(TnaColor.surface).pressable(0.9f, onClick = onAttach),
+                    Modifier.size(40.dp).clip(CircleShape).background(TnaColor.surface).pressable(0.9f, enabled = !app.uploading, onClick = onAttach),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Filled.Add, "Прикрепить фото", tint = TnaColor.accent, modifier = Modifier.size(22.dp)) }
+                ) {
+                    if (app.uploading) CircularProgressIndicator(Modifier.size(18.dp), color = TnaColor.accent, strokeWidth = 2.dp)
+                    else Icon(Icons.Filled.Add, "Вложение", tint = TnaColor.accent, modifier = Modifier.size(22.dp))
+                }
                 Spacer(Modifier.width(10.dp))
                 BasicTextField(
                     value = app.chatDraft,
@@ -718,18 +815,26 @@ private fun InputBar(app: AppModel, onAttach: () -> Unit) {
                 )
                 Spacer(Modifier.width(10.dp))
                 val canSend = app.chatDraft.isNotBlank()
-                Box(
-                    Modifier.size(44.dp).clip(CircleShape)
-                        .background(if (canSend) TnaColor.accentBrush else Brush.linearGradient(listOf(TnaColor.elevated, TnaColor.elevated)))
-                        .pressable(0.85f, enabled = canSend) { app.sendChat() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (app.editingMessage != null) Icons.Filled.Done else Icons.Filled.ArrowUpward,
-                        "Отправить",
-                        tint = if (canSend) Color.White else TnaColor.subtle,
-                        modifier = Modifier.size(20.dp),
-                    )
+                if (!canSend && app.editingMessage == null) {
+                    // Empty composer → voice note, like iOS.
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).background(TnaColor.elevated).pressable(0.85f, enabled = !app.uploading, onClick = onMic),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Filled.Mic, "Голосовое", tint = TnaColor.accent, modifier = Modifier.size(20.dp)) }
+                } else {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape)
+                            .background(if (canSend) TnaColor.accentBrush else Brush.linearGradient(listOf(TnaColor.elevated, TnaColor.elevated)))
+                            .pressable(0.85f, enabled = canSend) { app.sendChat() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            if (app.editingMessage != null) Icons.Filled.Done else Icons.Filled.ArrowUpward,
+                            "Отправить",
+                            tint = if (canSend) Color.White else TnaColor.subtle,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }

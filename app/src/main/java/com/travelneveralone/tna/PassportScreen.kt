@@ -1,5 +1,7 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -103,7 +105,7 @@ fun PassportScreen(app: AppModel) {
             item { LevelCard(data) }
             item { StampsSection(data.stamps) }
             item { AchievementsSection(data.achievements, onOpen = { selected = it }, onAll = { allShown = true }) }
-            item { LeaderboardSection(data.leaderboard) }
+            item { LeaderboardSection(data.leaderboard) { entry -> entry.userId?.let { app.openMiniProfile(MiniProfile(it, entry.name, avatarUrl = entry.avatarUrl)) } } }
         }
     }
     selected?.let { AchievementDetailSheet(it) { selected = null } }
@@ -138,8 +140,24 @@ private fun PassportLocked(onLogin: () -> Unit) {
 @Composable
 private fun PassportHeader(app: AppModel, data: PassportData) {
     val name = app.account.name.ifBlank { data.userName }
+    var sharing by remember { mutableStateOf(false) }
     Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("ПАСПОРТ", style = displayStyle(40))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("ПАСПОРТ", style = displayStyle(40), modifier = Modifier.weight(1f))
+            app.recap?.let { recap ->
+                Row(
+                    Modifier.pressable { app.recapShown = true }.clip(CircleShape).background(TnaColor.accentBrush)
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Итоги ${recap.year}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            CircleIconButton(Icons.Filled.Share) { sharing = true }
+        }
         Text("ПУТЕШЕСТВЕННИКА", style = displayBrushStyle(26))
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(app.avatarUrl, name, 28, mine = true)
@@ -151,6 +169,7 @@ private fun PassportHeader(app: AppModel, data: PassportData) {
             }
         }
     }
+    if (sharing) ShareCardDialog("Мой паспорт TNA", onDismiss = { sharing = false }) { PassportShareCard(data, name) }
 }
 
 /// Visited places on a flat world map cropped to fit them (iOS: MapKit; same framing rule).
@@ -383,7 +402,7 @@ fun AchievementCard(achievement: Achievement, modifier: Modifier = Modifier, onC
 }
 
 @Composable
-private fun LeaderboardSection(rows: List<LeaderboardEntry>) {
+private fun LeaderboardSection(rows: List<LeaderboardEntry>, onOpen: (LeaderboardEntry) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Рейтинг", "#кто_дальше_уехал")
         if (rows.isEmpty()) {
@@ -396,14 +415,14 @@ private fun LeaderboardSection(rows: List<LeaderboardEntry>) {
             )
         } else {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                rows.forEach { LeaderboardRow(it) }
+                rows.forEach { row -> LeaderboardRow(row) { onOpen(row) } }
             }
         }
     }
 }
 
 @Composable
-private fun LeaderboardRow(entry: LeaderboardEntry) {
+private fun LeaderboardRow(entry: LeaderboardEntry, onTap: () -> Unit) {
     val medal = when (entry.rank) {
         1 -> "🥇"
         2 -> "🥈"
@@ -412,7 +431,9 @@ private fun LeaderboardRow(entry: LeaderboardEntry) {
     }
     val shape = RoundedCornerShape(18.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape)
+        Modifier.fillMaxWidth()
+            .pressable(0.98f, enabled = !entry.isMe && entry.userId != null, onClick = onTap)
+            .clip(shape)
             .background(if (entry.isMe) TnaColor.accent.copy(alpha = 0.1f) else TnaColor.surface)
             .border(1.dp, if (entry.isMe) TnaColor.accent.copy(alpha = 0.4f) else TnaColor.stroke, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),

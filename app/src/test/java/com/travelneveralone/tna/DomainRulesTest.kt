@@ -203,4 +203,56 @@ class DomainRulesTest {
         assertEquals("Зима", plate.season)
         assertEquals("", SalePlate.untilLine(null))
     }
+
+    @Test
+    fun pollDraftQuizDropsMultiAndRevote() {
+        val a = PollDraftOption(text = " Да ")
+        val b = PollDraftOption(text = "Нет")
+        val empty = PollDraftOption(text = "  ")
+        val poll = PollDraft(question = " Едем? ", options = listOf(a, empty, b), multiple = true, quiz = true, correct = setOf(b.id)).build()
+        assertEquals("Едем?", poll.question)
+        assertEquals(listOf("Да", "Нет"), poll.options.map { it.text })
+        assertEquals(false, poll.multiple)
+        assertEquals(false, poll.revote)
+    }
+
+    @Test
+    fun staffTagOnlyForTeam() {
+        assertEquals(null, staffTag(false, "client"))
+        assertEquals("менеджер", staffTag(false, "manager"))
+    }
+
+    @Test
+    fun togetherTextAsGuideAndTraveller() {
+        assertEquals(null, PublicProfile(togetherCount = 0).togetherText)
+        assertEquals("Вёл твою поездку", PublicProfile(togetherCount = 1, togetherAsGuide = true).togetherText)
+        assertEquals("Ездили вместе в 2 поездках", PublicProfile(togetherCount = 2).togetherText)
+    }
+
+    @Test
+    fun tripPackIconsAndStatus() {
+        assertEquals("airplane", TripPackMapper.icon("Вылет в Петропавловск"))
+        assertEquals("fork.knife", TripPackMapper.icon("Ужин у костра"))
+        assertEquals("mappin.and.ellipse", TripPackMapper.icon("Что-то ещё"))
+        assertEquals("День 2 из 7 · Вулкан", TripPackMapper.statusLine("active", 2, 7, "Вулкан", null))
+        val start = java.time.LocalDate.of(2026, 12, 10)
+        assertTrue(TripPackMapper.statusLine("upcoming", null, 7, null, start, today = start).startsWith("Старт сегодня · 10 "))
+        assertTrue(TripPackMapper.statusLine("upcoming", null, 7, null, start, today = start.minusDays(3)).endsWith("через 3 дня"))
+    }
+
+    @Test
+    fun nameDisplayVariants() {
+        assertEquals(listOf("Аня", "Аня Сергеевна", "Козикова Аня", "Козикова А.", "Аня К."), NameDisplay.variants("Козикова", "Аня", "Сергеевна"))
+        assertEquals(listOf("Аня"), NameDisplay.variants("", "Аня", ""))
+    }
+
+    @Test
+    fun avatarCropKeepsCircleCovered() {
+        // 200x100 photo in a 100 circle: fill scale 1, 100 px of horizontal slack.
+        assertEquals(1f, AvatarCrop.fillScale(100f, 200f, 100f, 1f), 0.001f)
+        assertEquals(50f to 0f, AvatarCrop.clamp(80f, 30f, 100f, 200f, 100f, 1f))
+        assertEquals(Triple(50f, 0f, 100f), AvatarCrop.cropRect(100f, 200f, 100f, 1f, 0f, 0f))
+        // Zoom x2 shrinks the cut square to half.
+        assertEquals(50f, AvatarCrop.cropRect(100f, 200f, 100f, 2f, 0f, 0f).third, 0.001f)
+    }
 }
