@@ -453,6 +453,14 @@ fun parseInstant(raw: String?): Instant? {
         ?: runCatching { Instant.parse(raw.replace(" ", "T").let { if (it.endsWith("Z") || it.contains("+")) it else it + "Z" }) }.getOrNull()
 }
 
+/** «3 нояб. 2026 г.» — the feed date, like iOS SupabaseDate.displayDate. */
+fun displayDay(raw: String?): String {
+    val instant = parseInstant(raw) ?: return ""
+    return DateTimeFormatter.ofPattern("d MMM yyyy 'г.'", java.util.Locale("ru"))
+        .withZone(java.time.ZoneId.systemDefault())
+        .format(instant)
+}
+
 fun displayTime(raw: String?): String {
     val instant = parseInstant(raw) ?: return ""
     return DateTimeFormatter.ofPattern("HH:mm")

@@ -171,6 +171,19 @@ sealed class NewsLink {
     data class UrlLink(val url: String) : NewsLink()
 }
 
+/** news.link_type/link_id → a tap target; a broken tour id drops the link (iOS NewsDTO). */
+fun newsLink(type: String?, id: String?): NewsLink? = when (type) {
+    "tour" -> id?.let { runCatching { UUID.fromString(it) }.getOrNull() }?.let { NewsLink.TourLink(it) }
+    "url" -> id?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { NewsLink.UrlLink(it) }
+    else -> null
+}
+
+/** The item's show window (0141, show_until is exclusive) has ended at [now]. */
+fun newsWindowOver(showUntil: String?, now: java.time.Instant): Boolean {
+    val end = parseInstant(showUntil) ?: return false
+    return !end.isAfter(now)
+}
+
 data class NewsItem(
     val id: UUID,
     val title: String,

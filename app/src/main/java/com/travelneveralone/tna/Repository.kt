@@ -107,26 +107,30 @@ class TnaRepository(
     }
 
     suspend fun fetchNews(): List<NewsItem> {
+        // Same contract as iOS LiveNewsService: news.link_type/link_id/pinned
+        // (0108), server-clock show window via the on_air computed field (0141).
+        // RLS hides items outside their dates from clients; managers' policy
+        // returns every row, so the filter is needed for them.
         val raw = api.get("news", listOf(
-            "select" to "id,title,body,image_url,created_at,link_tour_id,link_url,is_pinned",
+            "select" to "id,title,body,image_url,link_type,link_id,published_at,created_at,pinned,show_until",
             "is_published" to "eq.true",
-            "order" to "is_pinned.desc,created_at.desc",
-        ), ttlSec = 120)
+            "on_air" to "is.true",
+            "order" to "pinned.desc,published_at.desc.nullslast,created_at.desc",
+            "limit" to "100",
+        ), ttlSec = 300)
+        // A cached response can outlive an item's end date: drop those by the device clock too.
+        val now = Instant.now()
         return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
-            val link = when {
-                row.str("link_tour_id") != null -> NewsLink.TourLink(UUID.fromString(row.str("link_tour_id")))
-                row.str("link_url") != null -> NewsLink.UrlLink(row.str("link_url")!!)
-                else -> null
-            }
+            if (newsWindowOver(row.str("show_until"), now)) return@mapNotNull null
             NewsItem(
                 id = UUID.fromString(row.str("id")),
                 title = row.str("title").orEmpty(),
                 body = row.str("body").orEmpty(),
                 imageUrl = row.str("image_url"),
-                date = row.str("created_at")?.let { displayTime(it) }.orEmpty(),
-                link = link,
-                isPinned = row.bool("is_pinned") == true,
+                date = displayDay(row.str("published_at") ?: row.str("created_at")),
+                link = newsLink(row.str("link_type"), row.str("link_id")),
+                isPinned = row.bool("pinned") == true,
             )
         }
     }

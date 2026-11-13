@@ -19,6 +19,22 @@ class DomainRulesTest {
         assertEquals("туров", pluralRU(14, "тур", "тура", "туров"))
     }
 
+    @Test fun newsShowWindowEnd() {
+        // 0141: show_until is exclusive; no end (or no column) never hides.
+        val end = "2027-01-09T00:00:00Z"
+        assertFalse(newsWindowOver(end, Instant.parse("2027-01-08T23:59:00Z")))
+        assertTrue(newsWindowOver(end, Instant.parse("2027-01-09T00:00:00Z")))
+        assertFalse(newsWindowOver(null, Instant.parse("2099-01-01T00:00:00Z")))
+    }
+
+    @Test fun newsLinkFromColumns() {
+        val id = UUID.randomUUID()
+        assertEquals(NewsLink.TourLink(id), newsLink("tour", id.toString()))
+        assertEquals(NewsLink.UrlLink("https://t.me/x"), newsLink("url", "https://t.me/x"))
+        assertNull(newsLink("tour", "not-a-uuid"))
+        assertNull(newsLink(null, null))
+    }
+
     @Test fun seasonsFromDateAndLabel() {
         assertEquals("Зима", seasonName(LocalDate.of(2026, 1, 15)))
         assertEquals("Весна", seasonName(LocalDate.of(2026, 4, 2)))
