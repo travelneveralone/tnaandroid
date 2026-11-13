@@ -1,5 +1,6 @@
 package com.travelneveralone.tna
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -234,8 +235,15 @@ private fun CatalogSkeleton() {
 
 @Composable
 private fun FeaturedCarousel(app: AppModel) {
-    val featured = app.tours.take(4)
+    val featured = app.featuredTours
     val state = rememberLazyListState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onTop = app.tab == AppTab.Tours && app.openTour == null && app.openChat == null && app.sheet == null &&
+        app.miniProfile == null && !app.recapShown && !app.tripModeShown && app.cropSource == null
+    val video = FeaturedVideoPolicy.system(context, onTop)
+    androidx.compose.runtime.LaunchedEffect(featured.mapNotNull { it.videoUrl }, app.network.isOnline, app.network.isConstrained) {
+        app.prepareVideos()
+    }
     Column(Modifier.bleed(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Ближайшие заезды", "#скоро_в_путь")
         LazyRow(
@@ -245,14 +253,19 @@ private fun FeaturedCarousel(app: AppModel) {
             contentPadding = PaddingValues(horizontal = 20.dp),
         ) {
             items(featured, key = { it.backendId ?: it.id }) { tour ->
-                FeaturedCard(tour, app.campaign) { app.openTour = tour }
+                FeaturedCard(
+                    tour,
+                    app.campaign,
+                    videoFile = if (video.mountsClip) tour.videoUrl?.let { app.videoFiles[it] } else null,
+                    mayPlay = video.mayPlay,
+                ) { app.openTour = tour }
             }
         }
     }
 }
 
 @Composable
-fun FeaturedCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
+fun FeaturedCard(tour: Tour, campaign: CampaignOffer?, videoFile: java.io.File? = null, mayPlay: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier
@@ -263,7 +276,12 @@ fun FeaturedCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
             .pressable(0.97f, onClick = onClick),
     ) {
         TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize())
-        if (tour.imageUrl == null) SymbolWatermark(tour.symbol, 170, 70, -80, -12f)
+        if (videoFile != null) {
+            LoopingVideo(videoFile, mayPlay, Modifier.matchParentSize())
+            // Same bottom scrim as the photo cover, so text stays readable over the clip.
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.5f))))
+        }
+        if (tour.imageUrl == null && videoFile == null) SymbolWatermark(tour.symbol, 170, 70, -80, -12f)
         val plate = SalePlate.make(tour, campaign?.until)
         if (plate != null) {
             SalePlateView(plate, featured = true)

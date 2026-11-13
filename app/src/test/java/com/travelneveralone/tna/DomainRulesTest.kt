@@ -255,4 +255,34 @@ class DomainRulesTest {
         // Zoom x2 shrinks the cut square to half.
         assertEquals(50f, AvatarCrop.cropRect(100f, 200f, 100f, 2f, 0f, 0f).third, 0.001f)
     }
+
+    @Test
+    fun featuredVideoPolicy() {
+        assertTrue(FeaturedVideoPolicy(screenOnTop = true, systemAllowsAutoplay = true, lowPowerMode = false).mayPlay)
+        // Behind another tab the clip stays mounted but paused.
+        val behind = FeaturedVideoPolicy(screenOnTop = false, systemAllowsAutoplay = true, lowPowerMode = false)
+        assertTrue(behind.mountsClip)
+        assertFalse(behind.mayPlay)
+        // Power saving or no animations: the card keeps its photo.
+        assertFalse(FeaturedVideoPolicy(true, true, lowPowerMode = true).mountsClip)
+        assertFalse(FeaturedVideoPolicy(true, systemAllowsAutoplay = false, lowPowerMode = false).mountsClip)
+    }
+
+    @Test
+    fun videoGeometry() {
+        assertEquals(0.5f, VideoGeometry.visibleFraction(100f, 100f, 50f, 100f), 0.001f)
+        assertEquals(0f, VideoGeometry.visibleFraction(0f, 100f, 0f, 100f), 0.001f)
+        // 16:9 clip in a portrait card: stretched width grows, height stays.
+        val (sx, sy) = VideoGeometry.fillScale(290f, 400f, 1920f, 1080f)
+        assertEquals(1f, sy, 0.001f)
+        assertEquals(1920f * (400f / 1080f) / 290f, sx, 0.001f)
+    }
+
+    @Test
+    fun videoCacheFileNameIsStable() {
+        val a = TourVideoCache.fileName("https://cdn.example.com/clips/kamchatka.MOV?token=1")
+        assertEquals(a, TourVideoCache.fileName("https://cdn.example.com/clips/kamchatka.MOV?token=1"))
+        assertTrue(a.endsWith(".mov"))
+        assertTrue(TourVideoCache.fileName("https://cdn.example.com/stream").endsWith(".mp4"))
+    }
 }

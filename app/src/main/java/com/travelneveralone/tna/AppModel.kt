@@ -1,5 +1,6 @@
 package com.travelneveralone.tna
 
+import kotlinx.coroutines.withContext
 import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.getValue
@@ -129,6 +130,30 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             } else startupStalled = true
             loadRole()
             loadChats()
+        }
+    }
+
+    // MARK: carousel clips
+
+    private val videoCache = TourVideoCache(java.io.File(app.cacheDir, "TourVideos"))
+    /// Remote clip URL → local file; only cards with a file get a moving cover.
+    var videoFiles by mutableStateOf<Map<String, java.io.File>>(emptyMap())
+        private set
+    val featuredTours: List<Tour> get() = tours.take(4)
+
+    /// Cached clips show right away; new ones wait for a non-cellular network.
+    fun prepareVideos() = viewModelScope.launch {
+        if (AppConfig.useMock) return@launch
+        val live = tours.mapNotNull { it.videoUrl }.toSet()
+        withContext(kotlinx.coroutines.Dispatchers.IO) { videoCache.prune(live) }
+        videoFiles = videoFiles.filterKeys { it in live }
+        val wanted = featuredTours.mapNotNull { it.videoUrl }
+        for (remote in wanted) {
+            if (videoFiles[remote] == null) videoCache.cachedFile(remote)?.let { videoFiles = videoFiles + (remote to it) }
+        }
+        if (!network.isOnline || network.isConstrained) return@launch
+        for (remote in wanted) {
+            if (videoFiles[remote] == null) videoCache.download(remote)?.let { videoFiles = videoFiles + (remote to it) }
         }
     }
 
