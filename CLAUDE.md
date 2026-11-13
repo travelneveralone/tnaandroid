@@ -22,6 +22,8 @@ Kotlin + Jetpack Compose клиент Travel Never Alone. Это мобильн�
 ./gradlew :app:testBetaDebugUnitTest
 ```
 
+Раздача APK и публикация в Play с нуля: `ДИСТРИБУЦИЯ.md`.
+
 Флейворы, как схемы iOS:
 
 - `beta` — `com.travelneveralone.android.beta`, тестовый Supabase

@@ -4,4 +4,6 @@ Android-приложение Travel Never Alone. Повторяет текущи
 
 Сборка: `./gradlew :app:assembleBetaDebug` (бета) или `:app:assembleProdRelease` (прод).
 
+Как отдать сборку людям с Android и как завести Google Play с нуля — в `ДИСТРИБУЦИЯ.md`.
+
 Правило разработки: фича мобильного клиента меняется сразу в `TNAiOS` и здесь. Подробности — в `CLAUDE.md`.
