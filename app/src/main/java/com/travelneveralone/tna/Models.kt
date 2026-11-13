@@ -3,6 +3,7 @@ package com.travelneveralone.tna
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /** Brand hex without alpha, matching the iOS `TNA` palette. */
@@ -306,6 +307,70 @@ data class PassportData(
     val places: List<VisitedPlace>,
     val leaderboard: List<LeaderboardEntry>,
 )
+
+/// Completed-tour ladder. Copy matches the iOS passport; the server only returns counts.
+enum class TravelerLevel(val title: String, val threshold: Int, val nextHint: String) {
+    Novice("Новичок", 0, "Съезди в первый тур, чтобы стать «Путешественником»"),
+    Traveler("Путешественник", 1, "Ещё пара туров — и ты «Первопроходец»"),
+    Pioneer("Первопроходец", 3, "7 туров с TNA открывают уровень «Легенда TNA» — скидка и ранний доступ к новинкам"),
+    Legend("Легенда TNA", 7, "Высший уровень достигнут. Спасибо, что с TNA!");
+
+    fun progress(tours: Int): Double {
+        val next = entries.getOrNull(ordinal + 1) ?: return 1.0
+        val span = (next.threshold - threshold).toDouble()
+        if (span <= 0) return 1.0
+        return ((tours - threshold) / span).coerceIn(0.0, 1.0)
+    }
+
+    companion object {
+        fun forTours(tours: Int): TravelerLevel =
+            entries.lastOrNull { tours >= it.threshold } ?: Novice
+    }
+}
+
+object PassportCopy {
+    private val stampAngles = listOf(-8.0, 5.0, -4.0, 9.0, -6.0, 3.0, -10.0)
+
+    fun memberSince(year: Int?): String =
+        if (year != null && year > 2000) "с TNA с $year" else ""
+
+    fun stampAngle(index: Int): Double = stampAngles[index % stampAngles.size]
+
+    /// Others are first name + last initial. The caller keeps the full name.
+    fun shortName(name: String, isMe: Boolean): String {
+        val trimmed = name.trim()
+        if (isMe) return trimmed
+        val parts = trimmed.split(" ").filter { it.isNotBlank() }
+        if (parts.size < 2) return trimmed
+        return "${parts[0]} ${parts[1].first()}."
+    }
+
+    fun monthYear(iso: String?): String? {
+        val instant = parseInstant(iso) ?: return null
+        return DateTimeFormatter.ofPattern("LLL yyyy", java.util.Locale("ru"))
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(instant)
+    }
+
+    fun stats(tours: Int, countries: Int, km: Int, days: Int, maxAltitude: Int): List<StatItem> = listOf(
+        StatItem("Тур", "Тура", "Туров", tours, "", "flag"),
+        StatItem("Страна", "Страны", "Стран", countries, "", "globe"),
+        StatItem("Километр", "Километра", "Километров", km, "", "path"),
+        StatItem("День в пути", "Дня в пути", "Дней в пути", days, "", "sun"),
+        StatItem.fixed("Высшая точка", maxAltitude, "м", "mountain"),
+    )
+}
+
+data class ProfileDraft(
+    val lastName: String = "",
+    val firstName: String = "",
+    val patronymic: String = "",
+    val city: String = "",
+    val birthday: String = "",
+) {
+    val displayName: String
+        get() = listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")
+}
 
 enum class MessageStatus { Sent, Queued, Failed }
 enum class MessageKind { Text, Image, File, Audio, Poll }

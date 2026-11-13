@@ -130,6 +130,20 @@ class DomainRulesTest {
         assertEquals(0, ChatUnread.flag(read, newer, true, read))
     }
 
+    @Test fun travelerLevelMatchesIosLadder() {
+        assertEquals(TravelerLevel.Novice, TravelerLevel.forTours(0))
+        assertEquals(TravelerLevel.Traveler, TravelerLevel.forTours(1))
+        assertEquals(TravelerLevel.Pioneer, TravelerLevel.forTours(3))
+        assertEquals(TravelerLevel.Legend, TravelerLevel.forTours(7))
+        assertEquals(1.0, TravelerLevel.Legend.progress(9), 0.001)
+        assertEquals("Анна К.", PassportCopy.shortName("Анна Крылова", false))
+        assertEquals("Анна Крылова", PassportCopy.shortName("Анна Крылова", true))
+        assertEquals("с TNA с 2024", PassportCopy.memberSince(2024))
+        assertEquals("", PassportCopy.memberSince(1990))
+        assertEquals(-8.0, PassportCopy.stampAngle(0), 0.001)
+        assertEquals(5.0, PassportCopy.stampAngle(1), 0.001)
+    }
+
     @Test fun referralResultCopy() {
         assertEquals(ReferralResult.Ok, ReferralResult.fromRaw("ok"))
         assertTrue(ReferralResult.Existing.userMessage.contains("уже ездил"))

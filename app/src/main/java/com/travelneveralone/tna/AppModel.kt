@@ -36,6 +36,7 @@ sealed interface Sheet {
     data object Schedule : Sheet
     data class TripMode(val trip: Trip) : Sheet
     data class Program(val tour: Tour) : Sheet
+    data object EditProfile : Sheet
 }
 
 class AppModel(app: Application) : AndroidViewModel(app) {
@@ -81,9 +82,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var referralCode by mutableStateOf("")
     var bonus by mutableStateOf<BonusSummary?>(null)
     var countries by mutableStateOf<Map<String, CountryStatus>>(emptyMap())
+    var tnaCountryCodes by mutableStateOf<Set<String>>(emptySet())
     var companions by mutableStateOf<List<TravelCompanion>>(emptyList())
     var prefsState by mutableStateOf(NotificationPrefs())
+    var profile by mutableStateOf(ProfileDraft())
     var chatDraft by mutableStateOf("")
+    var reactionFor by mutableStateOf<UUID?>(null)
+    var certificateNote by mutableStateOf<String?>(null)
+    var certificateBusy by mutableStateOf(false)
     var loginPhone by mutableStateOf("+7 ")
     var loginCode by mutableStateOf("")
     var loginStep by mutableStateOf(0)
@@ -116,6 +122,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 if (anon == false) {
                     account.isRegistered = true
                     auth.currentPhone()?.let { account.phone = PhoneNumber.pretty(it) }
+                    loadProfileBits()
                 }
             } else startupStalled = true
             loadRole()
@@ -187,10 +194,53 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val local = Message(text = text, isMine = true, author = account.name.ifBlank { "Я" }, time = "сейчас", status = MessageStatus.Queued)
         messages = messages + local
         viewModelScope.launch {
-            runCatching { repo.sendText(thread.id, text, local.id) }
+            val live = resolveThread(thread)
+            runCatching { repo.sendText(live.id, text, local.id) }
                 .onSuccess { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it } }
                 .onFailure { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Failed) else it } }
         }
+    }
+
+    fun sendImage(bytes: ByteArray) {
+        val thread = openChat ?: return
+        val local = Message(text = "", isMine = true, author = account.name.ifBlank { "Я" }, time = "сейчас", status = MessageStatus.Queued, kind = MessageKind.Image)
+        messages = messages + local
+        viewModelScope.launch {
+            val live = resolveThread(thread)
+            runCatching { repo.sendImage(live.id, bytes, local.id) }
+                .onSuccess {
+                    val fresh = runCatching { repo.history(live.id) }.getOrNull()
+                    messages = fresh ?: messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it }
+                }
+                .onFailure { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Failed) else it } }
+        }
+    }
+
+    fun react(messageId: UUID, emoji: String) {
+        val current = messages.firstOrNull { it.id == messageId } ?: return
+        val mine = current.reactions.firstOrNull { it.emoji == emoji }?.mine == true
+        reactionFor = null
+        viewModelScope.launch {
+            runCatching { repo.react(messageId, emoji, mine) }
+            val id = openChat?.id ?: return@launch
+            messages = runCatching { repo.history(id) }.getOrDefault(messages)
+        }
+    }
+
+    fun vote(messageId: UUID, optionId: String) {
+        viewModelScope.launch {
+            runCatching { repo.votePoll(messageId, optionId) }
+            val id = openChat?.id ?: return@launch
+            messages = runCatching { repo.history(id) }.getOrDefault(messages)
+        }
+    }
+
+    private suspend fun resolveThread(thread: ChatThread): ChatThread {
+        if (!thread.isSupport || thread.id != ChatThread.supportPlaceholder.id) return thread
+        val real = runCatching { repo.ensureSupport() }.getOrNull() ?: return thread
+        openChat = real
+        threads = threads.map { if (it.id == ChatThread.supportPlaceholder.id && it.isSupport) real else it }
+        return real
     }
 
     fun loadRole() = viewModelScope.launch {
@@ -201,7 +251,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadPassport() = viewModelScope.launch {
-        passport = runCatching { repo.fetchPassport() }.getOrDefault(Mock.passport)
+        val name = account.name.ifBlank { profile.displayName }
+        passport = runCatching { repo.fetchPassport(name) }.getOrElse {
+            val fallback = if (!network.isOnline && passport.stats.isEmpty()) Mock.passport else passport
+            fallback.copy(userName = name.ifBlank { fallback.userName })
+        }
     }
 
     fun loadProfileBits() = viewModelScope.launch {
@@ -209,6 +263,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         trips = runCatching { repo.fetchTrips() }.getOrDefault(emptyList())
         referralCode = runCatching { repo.myCode() }.getOrNull().orEmpty()
         bonus = runCatching { repo.bonusSummary() }.getOrNull()
+        runCatching { repo.fetchProfile() }.onSuccess { draft ->
+            profile = draft
+            if (draft.displayName.isNotBlank()) account.name = draft.displayName
+        }
+        runCatching { repo.fetchPrefs() }.onSuccess { prefsState = it }
+        loadCompanions()
     }
 
     fun loadBookings() = viewModelScope.launch {
@@ -231,6 +291,54 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun loadCountries() = viewModelScope.launch {
         countries = runCatching { repo.myCountries() }.getOrDefault(emptyMap())
+        tnaCountryCodes = runCatching { repo.tnaCodes() }.getOrDefault(emptySet())
+    }
+
+    fun loadCompanions() = viewModelScope.launch {
+        val loaded = runCatching { repo.fetchCompanions() }.getOrNull()
+        if (loaded != null) companions = loaded else if (companions.isEmpty()) companions = cachedCompanions()
+    }
+
+    fun addCompanion(last: String, first: String) {
+        val person = TravelCompanion(lastName = last.trim(), firstName = first.trim())
+        companions = listOf(person) + companions
+        persistCompanions(companions)
+        viewModelScope.launch {
+            val saved = runCatching { repo.saveCompanion(person); repo.fetchCompanions() }.getOrNull()
+            if (saved != null) {
+                companions = saved
+                persistCompanions(saved)
+            }
+        }
+    }
+
+    fun removeCompanion(id: UUID) {
+        companions = companions.filter { it.id != id }
+        persistCompanions(companions)
+        viewModelScope.launch { runCatching { repo.deleteCompanion(id) } }
+    }
+
+    fun savePrefs(next: NotificationPrefs) {
+        prefsState = next
+        viewModelScope.launch { runCatching { repo.savePrefs(next) } }
+    }
+
+    fun saveProfile(draft: ProfileDraft) {
+        profile = draft
+        if (draft.displayName.isNotBlank()) account.name = draft.displayName
+        viewModelScope.launch { runCatching { repo.saveProfile(draft) } }
+    }
+
+    fun buyCertificate(amount: Int, recipient: String, wish: String) {
+        certificateBusy = true
+        certificateNote = null
+        viewModelScope.launch {
+            val url = runCatching {
+                repo.buyCertificate(amount, recipient, wish, account.name, account.phone)
+            }.getOrNull()
+            certificateBusy = false
+            certificateNote = if (url.isNullOrBlank()) "Заявка ушла. Если оплата не открылась, менеджер пришлёт ссылку." else url
+        }
     }
 
     fun beginBooking(tour: Tour, departure: Departure?) {
@@ -250,6 +358,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         bookingBusy = true
         viewModelScope.launch {
             val result = runCatching {
+                val code = current.friendCode.trim()
+                if (code.isNotEmpty()) {
+                    val applied = repo.applyReferral(code)
+                    if (applied != ReferralResult.Ok && applied != ReferralResult.Already) {
+                        throw TnaException(applied.userMessage)
+                    }
+                }
                 val departure = current.departure
                 if (departure?.isSoldOut == true && departure.backendId != null) {
                     repo.joinWaitlist(departure.backendId, current.name.trim(), PhoneNumber.e164(current.phone))
@@ -302,8 +417,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteAccount() = viewModelScope.launch {
         runCatching { auth.deleteAccount() }
-        account.isRegistered = false
+            .onSuccess {
+                account.isRegistered = false
+                account.name = ""
+                account.phone = ""
+            }
     }
+
+    private fun companionPrefs() =
+        getApplication<Application>().getSharedPreferences("tna.companions", Context.MODE_PRIVATE)
+
+    private fun persistCompanions(list: List<TravelCompanion>) {
+        val raw = list.joinToString("\n") { "${it.id}\t${it.lastName}\t${it.firstName}\t${it.patronymic}" }
+        companionPrefs().edit().putString("rows", raw).apply()
+    }
+
+    private fun cachedCompanions(): List<TravelCompanion> =
+        companionPrefs().getString("rows", null).orEmpty().lineSequence().mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size < 3) return@mapNotNull null
+            val id = runCatching { UUID.fromString(parts[0]) }.getOrNull() ?: return@mapNotNull null
+            TravelCompanion(id = id, lastName = parts[1], firstName = parts[2], patronymic = parts.getOrElse(3) { "" })
+        }.toList()
 
     fun launch(block: suspend () -> Unit) {
         viewModelScope.launch { runCatching { block() } }

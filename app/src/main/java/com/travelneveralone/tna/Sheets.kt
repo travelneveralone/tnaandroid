@@ -36,9 +36,11 @@ fun BookingSheet(app: AppModel) {
     var name by remember { mutableStateOf(form.name) }
     var phone by remember { mutableStateOf(form.phone) }
     var datesUnknown by remember { mutableStateOf(form.datesUnknown) }
+    var friendCode by remember { mutableStateOf(form.friendCode) }
     form.name = name
     form.phone = phone
     form.datesUnknown = datesUnknown
+    form.friendCode = friendCode
     val ready = name.trim().length >= 2 && phone.count { it.isDigit() } >= 10 &&
         (!form.isCustomDates || datesUnknown)
     Text(if (form.isWaitlist) "ЛИСТ ОЖИДАНИЯ" else "ЗАЯВКА", style = displayStyle(28))
@@ -49,6 +51,10 @@ fun BookingSheet(app: AppModel) {
     Field("Имя", name) { name = it }
     Gap(8)
     Field("Телефон", phone) { phone = it }
+    if (app.account.isRegistered) {
+        Gap(8)
+        Field("Код друга, если есть", friendCode) { friendCode = it }
+    }
     if (form.isCustomDates) {
         Gap(8)
         Row(Modifier.fillMaxWidth().clickable { datesUnknown = !datesUnknown }) {
@@ -229,12 +235,14 @@ fun IndividualSheet(app: AppModel) {
 }
 
 @Composable
-fun CertificateSheet() {
+fun CertificateSheet(app: AppModel) {
     var amount by remember { mutableStateOf("15000") }
     var name by remember { mutableStateOf("") }
     var wish by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val note = app.certificateNote
     Text("СЕРТИФИКАТ", style = displayStyle(28))
-    Text("Номинал, имя получателя и пожелание. Оплату подтвердит менеджер.", color = TnaColor.subtle)
+    Text("Номинал, имя получателя и пожелание. Оплата откроется в браузере.", color = TnaColor.subtle)
     Gap(12)
     Field("Сумма, ₽", amount) { amount = it.filter { ch -> ch.isDigit() } }
     Gap(8)
@@ -242,21 +250,32 @@ fun CertificateSheet() {
     Gap(8)
     Field("Пожелание", wish) { wish = it }
     Gap(16)
-    Text("Покупка уходит менеджеру так же, как в iOS, когда эквайринг настроен на бэкенде. Сумма: ${Money.grouped(amount.toIntOrNull() ?: 0)} ₽.", color = TnaColor.subtle)
-    if (wish.isNotBlank()) Text("«$wish»", color = TnaColor.ink, modifier = Modifier.padding(top = 8.dp))
+    val sum = amount.toIntOrNull() ?: 0
+    val ready = sum >= 1000 && name.trim().length >= 2 && !app.certificateBusy
+    PrimaryButton(if (app.certificateBusy) "Открываем оплату…" else "Оплатить ${Money.grouped(sum)} ₽", ready) {
+        app.buyCertificate(sum, name.trim(), wish.trim())
+    }
+    if (note != null && note.startsWith("http")) {
+        androidx.compose.runtime.LaunchedEffect(note) {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(note)))
+        }
+        Text("Страница оплаты открыта в браузере.", color = TnaColor.ink, modifier = Modifier.padding(top = 8.dp))
+    } else if (note != null) {
+        Text(note, color = TnaColor.ink, modifier = Modifier.padding(top = 8.dp))
+    }
 }
 
 @Composable
 fun NotificationsSheet(app: AppModel) {
     Text("УВЕДОМЛЕНИЯ", style = displayStyle(28))
     val prefs = app.prefsState
-    ToggleRow("Все", prefs.allEnabled) { app.prefsState = prefs.copy(allEnabled = it) }
-    ToggleRow("Новости", prefs.news) { app.prefsState = prefs.copy(news = it) }
-    ToggleRow("Туры и заезды", prefs.tours) { app.prefsState = prefs.copy(tours = it) }
-    ToggleRow("Чаты", prefs.chat) { app.prefsState = prefs.copy(chat = it) }
-    ToggleRow("Достижения", prefs.achievements) { app.prefsState = prefs.copy(achievements = it) }
-    ToggleRow("Акции", prefs.promos) { app.prefsState = prefs.copy(promos = it) }
-    ToggleRow("Помогать улучшать приложение", prefs.analytics) { app.prefsState = prefs.copy(analytics = it) }
+    ToggleRow("Все", prefs.allEnabled) { app.savePrefs(prefs.copy(allEnabled = it)) }
+    ToggleRow("Новости", prefs.news) { app.savePrefs(prefs.copy(news = it)) }
+    ToggleRow("Туры и заезды", prefs.tours) { app.savePrefs(prefs.copy(tours = it)) }
+    ToggleRow("Чаты", prefs.chat) { app.savePrefs(prefs.copy(chat = it)) }
+    ToggleRow("Достижения", prefs.achievements) { app.savePrefs(prefs.copy(achievements = it)) }
+    ToggleRow("Акции", prefs.promos) { app.savePrefs(prefs.copy(promos = it)) }
+    ToggleRow("Помогать улучшать приложение", prefs.analytics) { app.savePrefs(prefs.copy(analytics = it)) }
     Text("Пуши на Android появятся, когда бэкенд примет FCM-токен. Сейчас канал доставки — APNs, как в iOS.", color = TnaColor.subtle, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
 }
 
@@ -264,11 +283,15 @@ fun NotificationsSheet(app: AppModel) {
 fun CompanionsSheet(app: AppModel) {
     var last by remember { mutableStateOf("") }
     var first by remember { mutableStateOf("") }
+    androidx.compose.runtime.LaunchedEffect(Unit) { app.loadCompanions() }
     Text("ПОПУТЧИКИ", style = displayStyle(28))
     Text("Сохраняем людей, с которыми едешь, чтобы не диктовать документы каждый раз.", color = TnaColor.subtle)
     app.companions.forEach { person ->
         Gap(8)
-        Text(person.fullName, fontWeight = FontWeight.Bold, color = TnaColor.ink)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(person.fullName, fontWeight = FontWeight.Bold, color = TnaColor.ink, modifier = Modifier.weight(1f))
+            Text("убрать", color = TnaColor.accent, modifier = Modifier.clickable { app.removeCompanion(person.id) })
+        }
     }
     Gap(12)
     Field("Фамилия", last) { last = it }
@@ -276,7 +299,7 @@ fun CompanionsSheet(app: AppModel) {
     Field("Имя", first) { first = it }
     Gap(12)
     PrimaryButton("Добавить", last.isNotBlank() && first.isNotBlank()) {
-        app.companions = app.companions + TravelCompanion(lastName = last.trim(), firstName = first.trim())
+        app.addCompanion(last, first)
         last = ""; first = ""
     }
 }
@@ -285,13 +308,23 @@ fun CompanionsSheet(app: AppModel) {
 fun CountriesSheet(app: AppModel) {
     var query by remember { mutableStateOf("") }
     Text("МОИ СТРАНЫ", style = displayStyle(28))
-    Text("Живу, был или хочу. Те же статусы, что на карте в iOS.", color = TnaColor.subtle)
+    Text("Ткни страну на карте или найди по названию. Ещё раз по той же — снимает отметку.", color = TnaColor.subtle)
+    Gap(8)
+    WorldMap(app.countries, app.tnaCountryCodes) { code ->
+        val order = CountryStatus.entries
+        val current = app.countries[code]
+        val next = if (current == null) order.first() else order.getOrNull(order.indexOf(current) + 1)
+        app.countries = if (next == null) app.countries - code else app.countries + (code to next)
+        app.launch { app.repo.setCountry(code, next) }
+    }
+    Gap(8)
+    Text("Серые — туры TNA. Зелёный живу, оранжевый был, фиолетовый хочу.", color = TnaColor.subtle, fontSize = 12.sp)
     Gap(8)
     Field("Страна", query) { query = it }
     val rows = CountryNamesRU.map.entries
-        .filter { query.isBlank() || it.value.contains(query, ignoreCase = true) }
+        .filter { query.isBlank() || it.value.contains(query, ignoreCase = true) || app.countries.containsKey(it.key) }
         .sortedBy { it.value }
-        .take(40)
+        .let { if (query.isBlank()) it.filter { row -> app.countries.containsKey(row.key) }.ifEmpty { it.take(12) } else it.take(40) }
     rows.forEach { (code, name) ->
         val status = app.countries[code]
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -315,6 +348,34 @@ fun CountriesSheet(app: AppModel) {
             }
         }
     }
+}
+
+@Composable
+fun EditProfileSheet(app: AppModel) {
+    var last by remember { mutableStateOf(app.profile.lastName) }
+    var first by remember { mutableStateOf(app.profile.firstName) }
+    var patronymic by remember { mutableStateOf(app.profile.patronymic) }
+    var city by remember { mutableStateOf(app.profile.city) }
+    var birthday by remember { mutableStateOf(app.profile.birthday) }
+    var saved by remember { mutableStateOf(false) }
+    Text("КАК К ТЕБЕ ОБРАЩАТЬСЯ", style = displayStyle(28))
+    Text("Имя видно в паспорте и в чатах. День рождения — ГГГГ-ММ-ДД.", color = TnaColor.subtle)
+    Gap(12)
+    Field("Фамилия", last) { last = it }
+    Gap(8)
+    Field("Имя", first) { first = it }
+    Gap(8)
+    Field("Отчество", patronymic) { patronymic = it }
+    Gap(8)
+    Field("Город", city) { city = it }
+    Gap(8)
+    Field("День рождения", birthday) { birthday = it }
+    Gap(16)
+    PrimaryButton("Сохранить", first.trim().length >= 2 || last.trim().length >= 2) {
+        app.saveProfile(ProfileDraft(last.trim(), first.trim(), patronymic.trim(), city.trim(), birthday.trim()))
+        saved = true
+    }
+    if (saved) Text("Сохранили.", color = TnaColor.ink, modifier = Modifier.padding(top = 8.dp))
 }
 
 @Composable

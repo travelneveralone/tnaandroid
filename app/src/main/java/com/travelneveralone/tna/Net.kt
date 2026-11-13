@@ -17,7 +17,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -133,6 +138,54 @@ class Postgrest(
     suspend fun rpc(name: String, body: String = "{}", ttlSec: Int? = null): String =
         call("POST", "rest/v1/rpc/$name", emptyList(), body, ttlSec)
 
+    suspend fun function(name: String, body: String): String =
+        call("POST", "functions/v1/$name", emptyList(), body, null)
+
+    suspend fun upload(bucket: String, path: String, bytes: ByteArray, contentType: String): String =
+        withContext(Dispatchers.IO) {
+            val url = baseUrl.trimEnd('/') + "/storage/v1/object/$bucket/$path"
+            val jwt = token()
+            val request = Request.Builder()
+                .url(url)
+                .post(bytes.toRequestBody(contentType.toMediaType()))
+                .header("apikey", anonKey)
+                .header("Authorization", "Bearer ${jwt ?: anonKey}")
+                .header("x-upsert", "true")
+                .build()
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw TnaException("Сервер ответил ${response.code}. Файл не ушёл")
+            }
+            baseUrl.trimEnd('/') + "/storage/v1/object/public/$bucket/$path"
+        }
+
+    suspend fun signedUrls(bucket: String, paths: List<String>): Map<String, String> = withContext(Dispatchers.IO) {
+        if (paths.isEmpty()) return@withContext emptyMap()
+        val body = buildJsonObject {
+            put("expiresIn", 60 * 60 * 24 * 30)
+            put("paths", buildJsonArray { paths.forEach { add(JsonPrimitive(it)) } })
+        }.toString()
+        val url = baseUrl.trimEnd('/') + "/storage/v1/object/sign/$bucket"
+        val jwt = token()
+        val request = Request.Builder()
+            .url(url)
+            .post(body.toRequestBody(jsonMedia))
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer ${jwt ?: anonKey}")
+            .build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@withContext emptyMap()
+            val rows = JSON.parseToJsonElement(response.body?.string().orEmpty()).arrayOrEmpty()
+            val out = mutableMapOf<String, String>()
+            rows.forEach { el ->
+                val row = el.jsonObjectOrNull() ?: return@forEach
+                val signed = row.str("signedURL") ?: return@forEach
+                val path = row.str("path") ?: return@forEach
+                out[path] = baseUrl.trimEnd('/') + "/storage/v1" + signed
+            }
+            out
+        }
+    }
+
     private suspend fun call(
         method: String,
         path: String,
@@ -215,15 +268,33 @@ class AuthSession(
         private set
     var userId: String? = prefs.getString("user", null)
         private set
+    private var expiresAtEpoch: Long = prefs.getLong("exp", 0L)
 
     suspend fun token(): String? = mutex.withLock {
-        if (accessToken != null) return accessToken
-        if (refreshToken != null && refresh()) return accessToken
+        val now = System.currentTimeMillis() / 1000
+        if (accessToken != null && expiresAtEpoch > now + 60) return accessToken
+        if (refreshToken != null) {
+            if (refresh()) return accessToken
+            // 5xx / offline: keep a still-valid access token. A rejected refresh
+            // already cleared the session, so the next step is a fresh anonymous user.
+            if (accessToken != null && expiresAtEpoch > now) return accessToken
+            if (accessToken == null) {
+                signUpAnonymous()
+                return accessToken
+            }
+            return null
+        }
         signUpAnonymous()
         accessToken
     }
 
-    suspend fun currentUserId(): UUID? = token()?.let { userId?.let(UUID::fromString) }
+    /// `sub` does not change when the access token expires, so the id stays
+    /// available offline without a refresh.
+    suspend fun currentUserId(): UUID? {
+        val raw = userId ?: accessToken?.let(::jwtSub)
+        if (raw != null) return runCatching { UUID.fromString(raw) }.getOrNull()
+        return token()?.let { userId?.let(UUID::fromString) }
+    }
 
     suspend fun requestCode(phone: String) = withContext(Dispatchers.IO) {
         token()
@@ -262,7 +333,7 @@ class AuthSession(
 
     suspend fun deleteAccount() = withContext(Dispatchers.IO) {
         val jwt = token() ?: throw TnaException("Нет соединения с интернетом")
-        val (status, _) = exchange("/auth/v1/user", null, bearer = jwt, method = "DELETE")
+        val (status, _) = exchange("/functions/v1/delete-account", "{}", bearer = jwt, method = "POST")
         if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл — можно повторить")
         signOut()
     }
@@ -295,13 +366,37 @@ class AuthSession(
         val obj = runCatching { JSON.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         accessToken = obj.str("access_token") ?: accessToken
         refreshToken = obj.str("refresh_token") ?: refreshToken
-        userId = obj["user"]?.jsonObjectOrNull()?.str("id") ?: obj.str("id") ?: userId
+        val tokenNow = accessToken
+        userId = obj["user"]?.jsonObjectOrNull()?.str("id")
+            ?: obj.str("id")
+            ?: tokenNow?.let(::jwtSub)
+            ?: userId
+        val seconds = obj.int("expires_in")
+        expiresAtEpoch = when {
+            seconds != null -> System.currentTimeMillis() / 1000 + seconds
+            tokenNow != null -> jwtExp(tokenNow) ?: (System.currentTimeMillis() / 1000 + 3600)
+            else -> expiresAtEpoch
+        }
         prefs.edit()
             .putString("access", accessToken)
             .putString("refresh", refreshToken)
             .putString("user", userId)
+            .putLong("exp", expiresAtEpoch)
             .apply()
     }
+
+    private fun jwtPayload(token: String): JsonObject? {
+        val parts = token.split('.')
+        if (parts.size < 2) return null
+        val body = parts[1].replace('-', '+').replace('_', '/')
+        val padded = body + "=".repeat((4 - body.length % 4) % 4)
+        val json = runCatching { String(java.util.Base64.getDecoder().decode(padded)) }.getOrNull() ?: return null
+        return runCatching { JSON.parseToJsonElement(json).jsonObject }.getOrNull()
+    }
+
+    private fun jwtSub(token: String): String? = jwtPayload(token)?.str("sub")
+
+    private fun jwtExp(token: String): Long? = jwtPayload(token)?.int("exp")?.toLong()
 
     private suspend fun userField(name: String): String? = withContext(Dispatchers.IO) {
         val jwt = token() ?: return@withContext null
@@ -347,6 +442,8 @@ fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNu
 fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull
     ?: this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
 fun JsonObject.bool(key: String): Boolean? = this[key]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+fun JsonObject.dbl(key: String): Double? = this[key]?.jsonPrimitive?.doubleOrNull
+fun JsonElement.jsonPrimitiveOrNull(): String? = (this as? JsonPrimitive)?.contentOrNull
 fun JsonElement.jsonObjectOrNull(): JsonObject? = this as? JsonObject
 fun JsonElement.arrayOrEmpty(): JsonArray = this as? JsonArray ?: JsonArray(emptyList())
 

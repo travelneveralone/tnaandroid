@@ -2,11 +2,14 @@ package com.travelneveralone.tna
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 
 @Composable
@@ -436,6 +441,12 @@ fun ChatsScreen(app: AppModel) {
 
 @Composable
 fun ChatScreen(app: AppModel, thread: ChatThread) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
+        app.sendImage(bytes)
+    }
     LaunchedEffect(thread.id) {
         while (true) {
             delay(4000)
@@ -461,14 +472,45 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                     if (!mine && thread.kind != ChatThreadKind.Support) {
                         Text(message.author, color = TnaColor.subtle, fontSize = 11.sp)
                     }
-                    Text(
-                        message.text.ifBlank { message.kind.name },
-                        color = if (mine) Color.White else TnaColor.ink,
-                        modifier = Modifier
+                    Column(
+                        Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (mine) TnaColor.ink else Color.White)
+                            .pointerInput(message.id) {
+                                detectTapGestures(onLongPress = { app.reactionFor = message.id })
+                            }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
+                    ) {
+                        if (message.kind == MessageKind.Image && !message.mediaUrl.isNullOrBlank()) {
+                            AsyncImage(model = message.mediaUrl, contentDescription = null, modifier = Modifier.size(180.dp))
+                        }
+                        if (message.poll != null) {
+                            Text(message.poll.question, color = if (mine) Color.White else TnaColor.ink, fontWeight = FontWeight.Bold)
+                            message.poll.options.forEach { option ->
+                                Text(
+                                    option.text,
+                                    color = TnaColor.accent,
+                                    modifier = Modifier.padding(top = 4.dp).clickable { app.vote(message.id, option.id) },
+                                )
+                            }
+                        } else if (message.text.isNotBlank()) {
+                            Text(message.text, color = if (mine) Color.White else TnaColor.ink)
+                        }
+                    }
+                    if (app.reactionFor == message.id) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Reactions.set.forEach { emoji ->
+                                Text(emoji, modifier = Modifier.clickable { app.react(message.id, emoji) }.padding(2.dp))
+                            }
+                        }
+                    }
+                    if (message.reactions.isNotEmpty()) {
+                        Text(
+                            message.reactions.joinToString("  ") { "${it.emoji} ${it.count}" },
+                            color = TnaColor.subtle,
+                            fontSize = 12.sp,
+                        )
+                    }
                     val mark = when (message.status) {
                         MessageStatus.Queued -> "ждёт сеть"
                         MessageStatus.Failed -> "не ушло"
@@ -479,6 +521,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
             }
         }
         Row(Modifier.navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("＋", color = TnaColor.accent, fontSize = 28.sp, modifier = Modifier.clickable { picker.launch("image/*") }.padding(end = 8.dp))
             BasicTextField(
                 value = app.chatDraft,
                 onValueChange = { app.chatDraft = it },
@@ -509,6 +552,12 @@ fun PassportScreen(app: AppModel) {
                 Text(data.level, fontWeight = FontWeight.Bold, color = TnaColor.ink, fontSize = 18.sp)
                 Text(data.nextLevelHint, color = TnaColor.subtle)
                 Gap(16)
+            }
+        }
+        if (data.places.isNotEmpty()) {
+            item {
+                Text("ГДЕ БЫЛ", style = displayStyle(22), modifier = Modifier.padding(horizontal = 20.dp))
+                Text(data.places.joinToString(" · ") { it.name }, color = TnaColor.subtle, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
             }
         }
         items(data.stats.size) { index ->
@@ -560,7 +609,7 @@ fun ProfileScreen(app: AppModel) {
     Column(Modifier.fillMaxSize().background(TnaColor.bg).verticalScroll(rememberScrollState()).padding(bottom = 120.dp)) {
         Text("ПРОФИЛЬ", style = displayStyle(36), modifier = Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp))
         Column(Modifier.padding(horizontal = 20.dp)) {
-            Text(if (app.account.isRegistered) app.account.name.ifBlank { "Путешественник" } else "Гость", style = displayStyle(28))
+            Text(if (app.account.isRegistered) app.account.name.ifBlank { "Путешественник" } else "Гость", style = displayStyle(28), modifier = Modifier.clickable { if (app.account.isRegistered) app.sheet = Sheet.EditProfile })
             Text(if (app.account.isRegistered) app.account.phone.ifBlank { "телефон подтверждён" } else "Войди, чтобы бронировать и копить штампы", color = TnaColor.subtle)
             if (!app.account.isRegistered) {
                 Gap(12)
@@ -594,6 +643,7 @@ fun ProfileScreen(app: AppModel) {
         }
         Gap(8)
         val rows = buildList {
+            if (app.account.isRegistered) add("Имя и город" to { app.sheet = Sheet.EditProfile })
             add("Уведомления" to { app.sheet = Sheet.Notifications })
             if (app.role.hasTravelProfile) {
                 add("Мои брони и оплаты" to { app.loadBookings(); app.sheet = Sheet.MyBookings })
@@ -643,7 +693,8 @@ fun SheetHost(app: AppModel, sheet: Sheet, onDismiss: () -> Unit) {
                 Sheet.Contacts -> ContactsSheet()
                 Sheet.About -> AboutSheet(app)
                 Sheet.Individual -> IndividualSheet(app)
-                Sheet.Certificate -> CertificateSheet()
+                Sheet.Certificate -> CertificateSheet(app)
+                Sheet.EditProfile -> EditProfileSheet(app)
                 Sheet.Notifications -> NotificationsSheet(app)
                 Sheet.Companions -> CompanionsSheet(app)
                 Sheet.Countries -> CountriesSheet(app)
