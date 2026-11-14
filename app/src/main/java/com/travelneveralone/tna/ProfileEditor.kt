@@ -109,7 +109,9 @@ fun EditProfileSheet(app: AppModel) {
     var city by remember { mutableStateOf(initial.city) }
     var birthday by remember { mutableStateOf(initial.birthday.ifBlank { null }) }
     var display by remember { mutableStateOf(app.account.name) }
-    var doc by remember { mutableStateOf(initial.doc) }
+    var doc by remember {
+        mutableStateOf(initial.doc.withSuggestedKind(initial.birthday.ifBlank { null }))
+    }
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -126,7 +128,10 @@ fun EditProfileSheet(app: AppModel) {
         if (!isPartner) DisplayNamePicker(display, variants) { display = it }
         PhoneRow(app)
         FieldSection(if (needsTicketData) "Для быстрого оформления билета" else "О себе")
-        OptionalDateField("Дата рождения", birthday) { birthday = it }
+        OptionalDateField("Дата рождения", birthday) {
+            birthday = it
+            doc = doc.withSuggestedKind(it)
+        }
         BookingField("Город проживания", city, capitalization = KeyboardCapitalization.Words) { city = it }
         if (needsTicketData) {
             EmailBox(app)
@@ -547,7 +552,9 @@ private fun CompanionRow(person: TravelCompanion, onTap: () -> Unit) {
 
 @Composable
 private fun CompanionEditor(app: AppModel, start: TravelCompanion, isNew: Boolean, onClose: () -> Unit) {
-    var person by remember(start.id) { mutableStateOf(start) }
+    var person by remember(start.id) {
+        mutableStateOf(start.copy(doc = start.doc.withSuggestedKind(start.birthday)))
+    }
     var busy by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     var deleteConfirm by remember { mutableStateOf(false) }
@@ -558,7 +565,9 @@ private fun CompanionEditor(app: AppModel, start: TravelCompanion, isNew: Boolea
         BookingField("Фамилия", person.lastName, capitalization = KeyboardCapitalization.Words) { person = person.copy(lastName = it) }
         BookingField("Имя", person.firstName, capitalization = KeyboardCapitalization.Words) { person = person.copy(firstName = it) }
         BookingField("Отчество", person.patronymic, capitalization = KeyboardCapitalization.Words) { person = person.copy(patronymic = it) }
-        OptionalDateField("Дата рождения", person.birthday) { person = person.copy(birthday = it) }
+        OptionalDateField("Дата рождения", person.birthday) {
+            person = person.copy(birthday = it, doc = person.doc.withSuggestedKind(it))
+        }
         BookingField("Телефон", person.phone, keyboard = KeyboardType.Phone) { person = person.copy(phone = it) }
         DocumentFields(person.doc) { person = person.copy(doc = it) }
         SubmitButton("Сохранить", busy = busy, enabled = person.lastName.isNotBlank() || person.firstName.isNotBlank()) {

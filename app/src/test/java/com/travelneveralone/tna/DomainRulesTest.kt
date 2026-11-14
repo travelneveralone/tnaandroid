@@ -298,4 +298,20 @@ class DomainRulesTest {
         assertTrue(a.endsWith(".mov"))
         assertTrue(TourVideoCache.fileName("https://cdn.example.com/stream").endsWith(".mp4"))
     }
+
+    @Test
+    fun underFourteenSuggestsBirthCertificate() {
+        val at = LocalDate.of(2026, 11, 14)
+        assertEquals(14, DocKind.RF_PASSPORT_MIN_AGE)
+        assertEquals(13, DocKind.ageYears("2013-11-14", at))
+        assertEquals(14, DocKind.ageYears("2012-11-14", at))
+        assertEquals(DocKind.BirthCert, DocKind.suggestedKind("2013-11-14", null, "", at))
+        assertNull(DocKind.suggestedKind("2012-11-14", null, "", at))
+        assertEquals(DocKind.PassportIntl, DocKind.suggestedKind("2013-11-14", DocKind.PassportIntl, "", at))
+        assertNull(DocKind.suggestedKind("2013-11-14", null, "IV-МЮ 1", at))
+        assertEquals(
+            DocKind.BirthCert,
+            IdentityDoc().withSuggestedKind("2013-11-14", at).kind,
+        )
+    }
 }

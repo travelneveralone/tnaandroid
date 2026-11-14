@@ -1,6 +1,7 @@
 package com.travelneveralone.tna
 
 import java.time.LocalDate
+import java.time.Period
 import java.util.UUID
 
 // Domain models for the features ported in the second pass: polls, public profiles,
@@ -226,7 +227,23 @@ enum class DocKind(val raw: String, val title: String) {
     val hasInternalFields: Boolean get() = this == PassportRF
 
     companion object {
+        /// Russian domestic passport is issued from 14; younger travellers default to a birth certificate.
+        const val RF_PASSPORT_MIN_AGE = 14
+
         fun fromRaw(raw: String?): DocKind? = entries.firstOrNull { it.raw == raw }
+
+        fun ageYears(birthdayIso: String?, at: LocalDate = LocalDate.now()): Int? {
+            val birth = birthdayIso?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+            return Period.between(birth, at).years
+        }
+
+        /// When no document is chosen yet and the person is under 14, suggest a birth certificate.
+        fun suggestedKind(birthdayIso: String?, current: DocKind?, number: String,
+                          at: LocalDate = LocalDate.now()): DocKind? {
+            if (current != null || number.isNotBlank()) return current
+            val age = ageYears(birthdayIso, at) ?: return current
+            return if (age < RF_PASSPORT_MIN_AGE) BirthCert else current
+        }
     }
 }
 
@@ -241,6 +258,12 @@ data class IdentityDoc(
 ) {
     val kind: DocKind? get() = DocKind.fromRaw(type)
     val isEmpty: Boolean get() = number.isBlank() && type.isBlank()
+
+    /// Under 14 with no document chosen → birth certificate.
+    fun withSuggestedKind(birthdayIso: String?, at: LocalDate = LocalDate.now()): IdentityDoc {
+        val suggested = DocKind.suggestedKind(birthdayIso, kind, number, at) ?: return this
+        return if (suggested == kind) this else copy(type = suggested.raw)
+    }
 }
 
 /// Citizenship list: post-Soviet countries pinned on top, the rest alphabetically.
