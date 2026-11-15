@@ -1,5 +1,7 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.CheckCircle
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -612,6 +614,92 @@ private fun CompanionEditor(app: AppModel, start: TravelCompanion, isNew: Boolea
             confirmButton = { TextButton({ saveFailed = false }) { Text("OK") } },
             containerColor = TnaColor.bg,
         )
+    }
+}
+
+// MARK: - Ticket data picker (iOS CompanionPickerSheet)
+
+private val selfId: java.util.UUID = java.util.UUID.fromString("00000000-0000-0000-0000-0000000000FF")
+
+/// «Данные для билета» in the support chat: pick yourself and/or companions to send.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TicketDataSheet(app: AppModel, onDismiss: () -> Unit, onSend: (List<TravelCompanion>) -> Unit) {
+    var selected by remember { mutableStateOf<Set<java.util.UUID>>(emptySet()) }
+    var adding by remember { mutableStateOf(false) }
+    var known by remember { mutableStateOf<Set<java.util.UUID>?>(null) }
+    LaunchedEffect(Unit) { app.loadCompanions() }
+    // A companion added from here comes back selected.
+    LaunchedEffect(app.companions) {
+        val ids = app.companions.map { it.id }.toSet()
+        known?.let { before -> selected = selected + (ids - before) }
+        known = ids
+    }
+    val profile = app.profile
+    val me = if (!profile.doc.isEmpty || profile.birthday.isNotBlank()) {
+        val name = listOf(profile.lastName, profile.firstName, profile.patronymic).filter { it.isNotBlank() }.joinToString(" ")
+            .ifBlank { app.account.name.trim() }
+        TravelCompanion(
+            id = selfId,
+            lastName = name.ifBlank { "Мои данные" }, firstName = "",
+            birthday = profile.birthday.ifBlank { null }, phone = app.account.phone, doc = profile.doc,
+        )
+    } else null
+    val entries = listOfNotNull(me) + app.companions
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = TnaColor.bg,
+    ) {
+        if (adding) {
+            CompanionEditor(app, remember { TravelCompanion(lastName = "", firstName = "") }, isNew = true) { adding = false }
+            return@ModalBottomSheet
+        }
+        SheetColumn(spacing = 10) {
+            Text("ДАННЫЕ ДЛЯ БИЛЕТА", style = displayStyle(28))
+            if (entries.isEmpty()) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Filled.GroupAdd, null, tint = TnaColor.subtle, modifier = Modifier.size(36.dp))
+                    Text("Нет сохранённых данных", color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Добавь попутчика здесь или заполни свой профиль — данные подставятся в следующий раз.", color = TnaColor.subtle, fontSize = 14.sp, textAlign = TextAlign.Center)
+                }
+            }
+            entries.forEach { c ->
+                val isOn = c.id in selected
+                val shape = RoundedCornerShape(16.dp)
+                Row(
+                    Modifier.fillMaxWidth().pressable(0.99f) { selected = if (isOn) selected - c.id else selected + c.id }
+                        .clip(shape).background(TnaColor.surface)
+                        .border(1.dp, if (isOn) TnaColor.accent.copy(alpha = 0.5f) else TnaColor.stroke, shape).padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        if (isOn) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null,
+                        tint = if (isOn) TnaColor.accent else TnaColor.subtle, modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(c.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            if (c.id == selfId) Text("ты", color = TnaColor.accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                        Text(CompanionFormat.line(c), color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().pressable(0.99f) { adding = true }.dashedOutline(TnaColor.accent.copy(alpha = 0.5f), 16).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Add, null, tint = TnaColor.accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Добавить попутчика", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+            PrimaryButton(if (selected.isEmpty()) "Выбери, кого отправить" else "Отправить (${selected.size})", enabled = selected.isNotEmpty()) {
+                onSend(entries.filter { it.id in selected })
+                onDismiss()
+            }
+        }
     }
 }
 

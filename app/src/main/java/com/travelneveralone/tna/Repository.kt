@@ -441,6 +441,63 @@ class TnaRepository(
     }.getOrNull()
 
     /// Guide / curator / manager of this trip chat: may pin and create polls.
+    suspend fun chatParticipants(chatId: UUID): List<ChatParticipant> = runCatching {
+        val raw = api.rpc("chat_participants", buildJsonObject { put("p_chat", chatId.toString()) }.toString())
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
+            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+            val id = row.str("user_id")?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return@mapNotNull null
+            ChatParticipant(
+                id = id,
+                name = row.str("name").orEmpty(),
+                city = row.str("city").orEmpty(),
+                role = row.str("role") ?: "client",
+                isAdmin = row.bool("is_admin") == true,
+                muted = row.bool("muted") == true,
+                avatarUrl = row.str("avatar"),
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    suspend fun setMemberMuted(chatId: UUID, userId: UUID, muted: Boolean) {
+        runCatching {
+            api.rpc("set_chat_member_muted", buildJsonObject {
+                put("p_chat", chatId.toString()); put("p_user", userId.toString()); put("p_muted", muted)
+            }.toString())
+        }
+    }
+
+    suspend fun removeMember(chatId: UUID, userId: UUID) {
+        runCatching {
+            api.rpc("remove_chat_member", buildJsonObject { put("p_chat", chatId.toString()); put("p_user", userId.toString()) }.toString())
+        }
+    }
+
+    /// Short privacy-safe card of another user (header of a 1:1 chat).
+    suspend fun miniProfile(userId: UUID): MiniProfile? = runCatching {
+        val obj = json.parseToJsonElement(
+            api.rpc("chat_mini_profile", buildJsonObject { put("p_user", userId.toString()) }.toString()),
+        ).jsonObjectOrNull() ?: return@runCatching null
+        MiniProfile(userId, obj.str("name").orEmpty(), obj.str("city").orEmpty(), obj.str("role") ?: "client", obj.str("avatar"))
+    }.getOrNull()
+
+    // Moderation: report a message, block an author (their messages disappear for the caller).
+    suspend fun reportMessage(messageId: UUID) {
+        runCatching {
+            api.post("message_reports", buildJsonObject { put("message_id", messageId.toString()) }.toString(), prefer = "resolution=ignore-duplicates")
+        }
+    }
+
+    suspend fun blockUser(userId: UUID) {
+        runCatching {
+            api.post("user_blocks", buildJsonObject { put("blocked_id", userId.toString()) }.toString(), prefer = "resolution=ignore-duplicates")
+        }
+    }
+
+    suspend fun blockedIds(): Set<UUID> = runCatching {
+        json.parseToJsonElement(api.get("user_blocks", listOf("select" to "blocked_id"), ttlSec = null)).arrayOrEmpty()
+            .mapNotNull { it.jsonObjectOrNull()?.str("blocked_id")?.let { id -> runCatching { UUID.fromString(id) }.getOrNull() } }.toSet()
+    }.getOrDefault(emptySet())
+
     suspend fun isChatStaff(chatId: UUID): Boolean = runCatching {
         api.rpc("is_chat_staff", buildJsonObject { put("p_chat", chatId.toString()) }.toString()).trim() == "true"
     }.getOrDefault(false)
@@ -1234,10 +1291,20 @@ object CompanionFormat {
         return lines.joinToString("\n")
     }
 
+    /// One-line summary for the picker row.
+    fun line(c: TravelCompanion): String {
+        val parts = mutableListOf(c.fullName.trim().ifEmpty { "Без имени" })
+        c.birthday?.let { parts += "р. " + dateStr(it) }
+        if (c.phone.isNotBlank()) parts += PhoneNumber.pretty(c.phone)
+        val kind = c.doc.kind
+        if (kind != null && c.doc.number.isNotBlank()) parts += "${docLabel(kind)} ${c.doc.number.trim()}"
+        return parts.joinToString(" · ")
+    }
+
     private fun docLabel(kind: DocKind) = when (kind) {
         DocKind.PassportRF -> "Паспорт РФ"
         DocKind.PassportIntl -> "Загран"
-        DocKind.BirthCert -> "Св-во о рожд."
+        DocKind.BirthCert -> "Свид. о рожд."
     }
 
     private fun dateStr(iso: String): String =

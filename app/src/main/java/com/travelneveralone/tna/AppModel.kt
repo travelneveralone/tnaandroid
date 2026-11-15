@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.UUID
 
 enum class AppTab(val title: String, val analytics: String) {
@@ -53,6 +54,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         online = { network.isOnline },
     )
     val repo = TnaRepository(api, auth)
+    /// Optional biometric lock over the signed-in session (iOS `AppLock`).
+    val biometrics = AndroidBiometrics(app)
+    val appLock = AppLock(PrefsFlagStore(app, "tna.lock"), biometrics, isRegistered = { account.isRegistered })
+    /// One-time «Входить по отпечатку?» after a phone sign-in.
+    var lockOfferShown by mutableStateOf(false)
     val isProd = BuildConfig.IS_PROD
 
     var showSplash by mutableStateOf(true)
@@ -343,13 +349,56 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var uploading by mutableStateOf(false)
     var chatNotice by mutableStateOf<String?>(null)
 
-    /// Pins and the staff flag for the open chat (staff = may pin and create polls).
+    var participants by mutableStateOf<List<ChatParticipant>>(emptyList())
+    var participantsShown by mutableStateOf(false)
+    /// Authors the caller has blocked - their messages are hidden.
+    var blocked by mutableStateOf<Set<UUID>>(emptySet())
+    var myUserId by mutableStateOf<UUID?>(null)
+
+    /// Pins, the staff flag and the member list for the open chat.
     fun loadChatExtras(thread: ChatThread) = viewModelScope.launch {
         pinned = emptyList()
         chatStaff = false
+        participants = emptyList()
         if (thread.id == ChatThread.supportPlaceholder.id) return@launch
+        if (blocked.isEmpty()) blocked = repo.blockedIds()
         pinned = repo.fetchPinned(thread.id)
-        chatStaff = thread.kind == ChatThreadKind.Trip && repo.isChatStaff(thread.id)
+        if (thread.kind == ChatThreadKind.Trip) {
+            chatStaff = repo.isChatStaff(thread.id)
+            myUserId = auth.currentUserId()
+            participants = repo.chatParticipants(thread.id)
+        }
+    }
+
+    fun participant(id: UUID?): ChatParticipant? = id?.let { uid -> participants.firstOrNull { it.id == uid } }
+
+    fun setMemberMuted(person: ChatParticipant, muted: Boolean) = viewModelScope.launch {
+        val chat = openChat?.id ?: return@launch
+        repo.setMemberMuted(chat, person.id, muted)
+        participants = repo.chatParticipants(chat)
+    }
+
+    fun removeMember(person: ChatParticipant) = viewModelScope.launch {
+        val chat = openChat?.id ?: return@launch
+        repo.removeMember(chat, person.id)
+        participants = repo.chatParticipants(chat)
+    }
+
+    fun reportMessage(message: Message) = viewModelScope.launch {
+        repo.reportMessage(message.id)
+        chatNotice = "Жалоба отправлена. Спасибо — мы проверим."
+    }
+
+    fun blockAuthor(message: Message) = viewModelScope.launch {
+        val author = message.authorId ?: return@launch
+        repo.blockUser(author)
+        blocked = blocked + author
+        chatNotice = "Пользователь заблокирован"
+    }
+
+    /// Header of a 1:1 chat opens the other person's mini-profile.
+    fun openMiniProfile(userId: UUID) = viewModelScope.launch {
+        repo.miniProfile(userId)?.let { miniProfile = it }
     }
 
     fun refreshPoll(messageId: UUID) = viewModelScope.launch {
@@ -517,8 +566,30 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         loadCompanions()
     }
 
+    /// "loading", "loaded" or the empty-state message to show.
+    var bookingsState by mutableStateOf("loading")
+    /// Trips already travelled and still unreviewed («Как прошёл тур?»).
+    var pendingReviews by mutableStateOf<List<ReviewableTrip>>(emptyList())
+
     fun loadBookings() = viewModelScope.launch {
-        bookings = runCatching { repo.fetchBookings() }.getOrElse { if (AppConfig.useMock) Mock.bookings else bookings }
+        if (AppConfig.useMock) {
+            bookings = Mock.bookings
+            bookingsState = "loaded"
+            return@launch
+        }
+        runCatching { repo.fetchBookings() }
+            .onSuccess { fresh ->
+                bookings = fresh
+                bookingsState = if (fresh.isEmpty()) "Здесь появятся твои брони и оплаты" else "loaded"
+            }
+            .onFailure {
+                bookingsState = when {
+                    bookings.isNotEmpty() -> "loaded"
+                    !network.isOnline -> "Нет сети — брони появятся при подключении"
+                    else -> "Не удалось загрузить. Потяни, чтобы обновить"
+                }
+            }
+        pendingReviews = runCatching { repo.reviewableTrips() }.getOrDefault(emptyList()).filter { !it.reviewed }
     }
 
     /// "loading" | "loaded" | "failed" - an error shows only when there is nothing cached.
@@ -773,6 +844,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     loadRole()
                     loadProfileBits()
                     loadChats()
+                    if (appLock.shouldOffer) {
+                        // Let the login sheet close first, like iOS.
+                        viewModelScope.launch { delay(700); lockOfferShown = appLock.shouldOffer }
+                    }
                     // A pending action (book, write to support…) takes over the sheet;
                     // otherwise the login sheet shows its «Готово» step.
                     val pending = afterLogin
@@ -790,7 +865,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun signOut() {
+        blocked = emptySet()
         auth.signOut()
+        appLock.reset()
         account.isRegistered = false
         account.name = ""
         account.phone = ""

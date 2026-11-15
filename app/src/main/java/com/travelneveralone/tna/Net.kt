@@ -284,6 +284,21 @@ class Postgrest(
 
 class TnaException(message: String) : Exception(message)
 
+const val TOO_MANY_CODE_ATTEMPTS = "Слишком много попыток. Попробуй чуть позже"
+
+/// Why the server refused to text a login code (iOS `CodeRequestError`). The
+/// send-sms hook answers with a ready Russian sentence; GoTrue's own limits
+/// answer 429 in English and get a generic line. Null = nothing specific.
+fun codeRequestMessage(status: Int, body: String): String? {
+    val obj = runCatching { JSON.parseToJsonElement(body).jsonObject }.getOrNull()
+    val text = obj?.let { o ->
+        listOf("msg", "message", "error_description").firstNotNullOfOrNull { o.str(it)?.takeIf(String::isNotEmpty) }
+            ?: o["error"]?.jsonObjectOrNull()?.str("message")?.takeIf(String::isNotEmpty)
+    }
+    if (text != null && text.any { it in '\u0400'..'\u04FF' }) return text
+    return if (status == 429) TOO_MANY_CODE_ATTEMPTS else null
+}
+
 class AuthSession(
     context: Context,
     private val baseUrl: String,
@@ -337,8 +352,10 @@ class AuthSession(
         token()
         val digits = PhoneNumber.digits(phone)
         val body = """{"phone":"$digits"}"""
-        val code = post("/auth/v1/otp", body, bearer = null)
-        if (code !in 200..299) throw TnaException("Сервер ответил $code. Запрос не прошёл — можно повторить")
+        val (code, text) = exchange("/auth/v1/otp", body, bearer = null)
+        if (code !in 200..299) {
+            throw TnaException(codeRequestMessage(code, text) ?: "Сервер ответил $code. Запрос не прошёл — можно повторить")
+        }
     }
 
     suspend fun verify(phone: String, code: String): ReturningCustomer? = withContext(Dispatchers.IO) {

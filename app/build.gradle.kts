@@ -95,6 +95,8 @@ dependencies {
     implementation(libs.coroutines)
     implementation(libs.coil)
     implementation(libs.androidx.core)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)
     testImplementation(libs.junit)

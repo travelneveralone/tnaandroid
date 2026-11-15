@@ -1,5 +1,13 @@
 package com.travelneveralone.tna
 
+import java.util.UUID
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PersonRemove
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
 import android.content.Context
 import android.media.MediaPlayer
 import android.media.MediaRecorder
@@ -240,6 +248,10 @@ private fun PollResultRow(poll: PollData, option: PollOption, state: PollState?,
 /// Long-press without a click action (poll card).
 fun Modifier.pressableLong(onLongPress: () -> Unit): Modifier =
     pointerInput(onLongPress) { detectTapGestures(onLongPress = { onLongPress() }) }
+
+/// Tap + long-press without ripple (rows with a staff context menu).
+fun Modifier.pressableLong(onClick: () -> Unit, onLongClick: () -> Unit): Modifier =
+    pointerInput(onClick, onLongClick) { detectTapGestures(onTap = { onClick() }, onLongPress = { onLongClick() }) }
 
 // MARK: - Poll composer
 
@@ -549,3 +561,133 @@ fun RecordingBar(onCancel: () -> Unit, onSend: () -> Unit) {
     }
 }
 
+
+// MARK: - Participants (iOS ChatParticipantsView)
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun ParticipantsSheet(app: AppModel) {
+    val people = app.participants
+    var menuFor by remember { mutableStateOf<UUID?>(null) }
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = { app.participantsShown = false },
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = TnaColor.bg,
+    ) {
+        Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom) {
+            Text("УЧАСТНИКИ", style = displayStyle(28))
+            if (people.isNotEmpty()) {
+                Spacer(Modifier.width(8.dp))
+                Text("${people.size}", color = TnaColor.subtle, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
+            }
+        }
+        if (people.isEmpty()) {
+            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(color = TnaColor.accent)
+            }
+        }
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(people.size, key = { people[it].id }) { index ->
+                val p = people[index]
+                val isMe = p.id == app.myUserId
+                val shown = p.shownName
+                val shape = RoundedCornerShape(16.dp)
+                Box {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .pressableLong(
+                                onClick = {
+                                    app.participantsShown = false
+                                    app.openMiniProfile(MiniProfile(p.id, shown, p.city, p.role, p.avatarUrl, p.isAdmin))
+                                },
+                                onLongClick = { if (app.chatStaff && !isMe) menuFor = p.id },
+                            )
+                            .clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Avatar(p.avatarUrl, shown, 44)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(if (isMe) "$shown (ты)" else shown, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                p.roleTag?.let { RoleTag(it) }
+                                if (p.muted) Icon(Icons.Filled.VolumeOff, "Не может писать", tint = TnaColor.subtle, modifier = Modifier.size(14.dp))
+                            }
+                            if (p.city.isNotBlank()) Text(p.city, color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1)
+                        }
+                        Icon(Icons.Filled.ChevronRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(menuFor == p.id, onDismissRequest = { menuFor = null }, containerColor = TnaColor.surface) {
+                        DropdownMenuItem(
+                            text = { Text(if (p.muted) "Разрешить писать" else "Запретить писать") },
+                            leadingIcon = { Icon(if (p.muted) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff, null) },
+                            onClick = { menuFor = null; app.setMemberMuted(p, !p.muted) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Удалить из чата", color = TnaColor.danger) },
+                            leadingIcon = { Icon(Icons.Filled.PersonRemove, null, tint = TnaColor.danger) },
+                            onClick = { menuFor = null; app.removeMember(p) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Small role badge next to a name ("гид", "менеджер"), Telegram-admin style.
+@Composable
+fun RoleTag(tag: String) {
+    Text(
+        tag,
+        color = TnaColor.accent,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.ExtraBold,
+        modifier = Modifier.clip(CircleShape).background(TnaColor.accent.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/// Chips with members matching the "@" token being typed.
+@Composable
+fun MentionBar(matches: List<ChatParticipant>, onPick: (ChatParticipant) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        matches.forEach { p ->
+            Row(
+                Modifier.pressable(0.96f) { onPick(p) }.clip(CircleShape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Avatar(p.avatarUrl, p.name, 24)
+                Text(p.name, color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                p.roleTag?.let { Text(it, color = TnaColor.accent, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold) }
+            }
+        }
+    }
+}
+
+/// Saves a chat photo to the gallery (Pictures/TNA) through MediaStore. Needs no
+/// permission on Android 10+; older systems are not supported and return false.
+suspend fun savePhotoToGallery(context: Context, url: String): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    runCatching {
+        val name = "tna-${System.currentTimeMillis()}.jpg"
+        if (android.os.Build.VERSION.SDK_INT < 29) return@runCatching false
+        val bytes = java.net.URL(url).openStream().use { it.readBytes() }
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/TNA")
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching false
+        resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return@runCatching false
+        true
+    }.getOrDefault(false)
+}

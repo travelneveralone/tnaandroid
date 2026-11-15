@@ -1,6 +1,10 @@
 package com.travelneveralone.tna
 
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.RateReview
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
@@ -284,10 +288,32 @@ fun BookingsSheet(app: AppModel) {
         BookingDetail(booking) { selected = null }
         return
     }
+    var reviewing by remember { mutableStateOf<TourDetailModel?>(null) }
     SheetColumn {
         Text("МОИ БРОНИ", style = displayStyle(34))
-        if (app.bookings.isEmpty()) {
-            EmptyState(Icons.Filled.Luggage, null, "Броней пока нет. Выбери тур — и он появится здесь.")
+        // Above the bookings: the one thing here that asks for an action.
+        app.pendingReviews.forEach { trip ->
+            val tour = app.tours.firstOrNull { it.backendId == trip.tourId } ?: return@forEach
+            val shape = RoundedCornerShape(18.dp)
+            Row(
+                Modifier.fillMaxWidth().pressable(0.98f) {
+                    reviewing = TourDetailModel(app.repo, tour).also { it.pendingTrips = listOf(trip) }
+                }.clip(shape).background(TnaColor.accent.copy(alpha = 0.08f)).border(1.dp, TnaColor.accent.copy(alpha = 0.25f), shape).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.RateReview, null, tint = TnaColor.accent, modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Как прошёл тур?", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(if (trip.label.isBlank()) trip.tourName else "${trip.tourName} · ${trip.label}", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2)
+                }
+                Icon(Icons.Filled.ChevronRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
+            }
+        }
+        when (app.bookingsState) {
+            "loading" -> if (app.bookings.isEmpty()) repeat(3) { SkeletonBlock(Modifier.fillMaxWidth().height(92.dp)) }
+            "loaded" -> Unit
+            else -> if (app.bookings.isEmpty()) EmptyState(Icons.Filled.Luggage, null, app.bookingsState)
         }
         app.bookings.forEach { booking ->
             val shape = RoundedCornerShape(20.dp)
@@ -312,6 +338,12 @@ fun BookingsSheet(app: AppModel) {
             }
         }
     }
+    reviewing?.let { model ->
+        ReviewComposerSheet(model) {
+            reviewing = null
+            app.loadBookings()
+        }
+    }
 }
 
 private fun peopleText(n: Int) = "$n ${pluralRU(n, "человек", "человека", "человек")}"
@@ -334,7 +366,16 @@ private fun BookingDetail(booking: BookingSummary, onBack: () -> Unit) {
             Text(booking.title, style = displayStyle(24))
             if (booking.subtitle.isNotBlank()) Text(booking.subtitle, color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             booking.moneyNote?.let { Text(it, color = TnaColor.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-            Text("Заявка от ${booking.date}", color = TnaColor.subtle.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (booking.peopleCount > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Groups, null, tint = TnaColor.accent, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(peopleText(booking.peopleCount), color = TnaColor.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Text("Заявка от ${booking.date}", color = TnaColor.subtle.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
         }
         if (booking.status == BookingStatus.Cancelled) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.hex(BookingStatus.Cancelled.color).copy(alpha = 0.12f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -358,6 +399,27 @@ private fun BookingDetail(booking: BookingSummary, onBack: () -> Unit) {
                         }
                         Spacer(Modifier.width(14.dp))
                         Text(step.label, color = if (index <= current) TnaColor.ink else TnaColor.subtle, fontSize = 15.sp, fontWeight = if (index == current) FontWeight.Bold else FontWeight.Medium, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+            }
+        }
+        val companions = booking.note?.let { ParsedBookingNote(it).companions }.orEmpty()
+        if (companions.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Попутчики (${companions.size})", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                companions.forEach { (name, details) ->
+                    var open by remember(name) { mutableStateOf(false) }
+                    val shape = RoundedCornerShape(14.dp)
+                    Column(Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).pressable(0.99f) { open = !open }.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(name, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (details.isNotEmpty()) Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
+                        }
+                        if (open) {
+                            Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                details.forEach { Text(it, color = TnaColor.subtle, fontSize = 13.sp) }
+                            }
+                        }
                     }
                 }
             }

@@ -61,6 +61,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -501,10 +503,19 @@ private fun PromoCard(app: AppModel) {
 private fun SettingsList(app: AppModel, onIssue: () -> Unit) {
     val context = LocalContext.current
     val registered = app.account.isRegistered
+    val lockScope = rememberCoroutineScope()
     fun open(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     val shape = RoundedCornerShape(20.dp)
     Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape)) {
         ProfileRow(Icons.Filled.Notifications, "Уведомления") { app.requireAccount { app.sheet = Sheet.Notifications } }
+        // App lock: signed-in users on devices with biometrics.
+        val lockTitle = app.appLock.kind.title
+        if (app.appLock.isOfferable && lockTitle != null) {
+            ProfileDivider()
+            ProfileToggleRow(app.appLock.kind.icon, "Вход по $lockTitle", app.appLock.isEnabled) { on ->
+                lockScope.launch { app.appLock.setEnabled(on) }
+            }
+        }
         if (registered && app.role.canBookAndEarn) {
             ProfileDivider()
             ProfileRow(Icons.Filled.CreditCard, "Мои брони и оплаты") { app.loadBookings(); app.sheet = Sheet.MyBookings }

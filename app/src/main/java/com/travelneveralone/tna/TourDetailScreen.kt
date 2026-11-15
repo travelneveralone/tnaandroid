@@ -344,7 +344,7 @@ private fun StatPill(icon: androidx.compose.ui.graphics.vector.ImageVector, valu
 }
 
 /// 1.5 dp dashed rounded outline (custom-dates chip, «Свои даты» button).
-private fun Modifier.dashedOutline(color: Color, corner: Int = 16): Modifier = drawBehind {
+fun Modifier.dashedOutline(color: Color, corner: Int = 16): Modifier = drawBehind {
     val stroke = 1.5.dp.toPx()
     drawRoundRect(
         color = color,
@@ -699,7 +699,7 @@ private fun BookingBar(tour: Tour, customDates: Boolean, member: Boolean, soldOu
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
+fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var rating by remember { mutableIntStateOf(5) }

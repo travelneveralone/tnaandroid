@@ -337,3 +337,95 @@ object AvatarCrop {
         return Triple(left, top, d / s)
     }
 }
+
+/// `chat_participants()` row: who is in a group chat.
+data class ChatParticipant(
+    val id: UUID,
+    val name: String,
+    val city: String,
+    val role: String,
+    val isAdmin: Boolean,
+    val muted: Boolean,
+    val avatarUrl: String? = null,
+) {
+    val roleTag: String? get() = staffTag(isAdmin, role)
+    /// Partners are faceless representatives - never a personal name.
+    val shownName: String get() = if (role == "partner") ChatNames.PARTNER else name
+}
+
+/// Chat display rules shared by bubbles, the participant list and @-mentions.
+object ChatNames {
+    const val PARTNER = "Представитель TNA"
+
+    /// Name above a bubble: partner → «Представитель TNA»; unnamed staff → role word.
+    fun author(message: Message, participant: ChatParticipant?): String {
+        if (!message.asCompany && participant?.role == "partner") return PARTNER
+        val name = message.author.ifBlank { "Участник" }
+        val tag = if (message.asCompany) null else participant?.roleTag
+        if (tag != null && name == "Участник") return if (tag == "менеджер") "Менеджер" else "Гид"
+        return name
+    }
+
+    /// The active "@" token at the end of the draft; null when not mentioning.
+    fun mentionQuery(draft: String): String? {
+        val at = draft.lastIndexOf('@')
+        if (at < 0) return null
+        if (at > 0 && !draft[at - 1].isWhitespace()) return null
+        val after = draft.substring(at + 1)
+        return if (after.any { it.isWhitespace() }) null else after
+    }
+
+    fun mentionMatches(query: String?, people: List<ChatParticipant>, me: UUID?): List<ChatParticipant> {
+        val q = query?.lowercase() ?: return emptyList()
+        return people.filter { p ->
+            p.id != me && (q.isEmpty() || p.name.lowercase().startsWith(q) || p.name.lowercase().split(" ").any { it.startsWith(q) })
+        }.take(8)
+    }
+
+    /// Replaces the trailing "@query" with "@Name ".
+    fun insertMention(draft: String, name: String): String {
+        val at = draft.lastIndexOf('@')
+        return if (at < 0) draft else draft.substring(0, at) + "@$name "
+    }
+}
+
+/// Splits a request note into its summary and the companion blocks, so the booking
+/// detail can show each companion as a separate collapsible row.
+class ParsedBookingNote(note: String) {
+    val summary: String
+    val companions: List<Pair<String, List<String>>>
+
+    init {
+        val at = note.indexOf("👥")
+        if (at >= 0) {
+            summary = note.substring(0, at).trim()
+            companions = parse(note.substring(at))
+        } else {
+            summary = note.trim()
+            companions = emptyList()
+        }
+    }
+
+    private fun parse(block: String): List<Pair<String, List<String>>> {
+        val out = mutableListOf<Pair<String, List<String>>>()
+        var name: String? = null
+        var details = mutableListOf<String>()
+        for (raw in block.split("\n")) {
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith("👥")) continue
+            // Visual rule between people in the chat / amo text.
+            if (line.all { it == '—' || it == '-' }) continue
+            val dot = line.indexOf('.')
+            // A companion header looks like "1. Фамилия Имя".
+            if (dot > 0 && line.substring(0, dot).all { it.isDigit() }) {
+                name?.let { out += it to details }
+                name = line.substring(dot + 1).trim()
+                details = mutableListOf()
+            } else {
+                details += line
+            }
+        }
+        name?.let { out += it to details }
+        return out
+    }
+}

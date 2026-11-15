@@ -1,5 +1,8 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Report
+import androidx.compose.material.icons.filled.Download
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -317,6 +320,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     }
     var attachMenu by remember { mutableStateOf(false) }
     var composingPoll by remember { mutableStateOf(false) }
+    var ticketData by remember { mutableStateOf(false) }
     var pinIndex by remember(thread.id) { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -333,7 +337,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
             app.messages = fresh + pending
         }
     }
-    val messages = app.messages
+    val messages = if (app.blocked.isEmpty()) app.messages else app.messages.filter { it.authorId == null || it.isMine || it.authorId !in app.blocked }
     val showsAvatars = thread.kind == ChatThreadKind.Trip || thread.kind == ChatThreadKind.Community
     Column(Modifier.fillMaxSize().background(TnaColor.bg).imePadding()) {
         ChatHeader(app, thread)
@@ -354,6 +358,11 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 },
                 onUnpin = { app.setPinned(it, false) },
             )
+        }
+        if (!app.network.isOnline) {
+            Text("Нет сети — сообщения отправятся автоматически", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().background(TnaColor.accent).padding(vertical = 6.dp))
         }
         app.chatNotice?.let { notice ->
             LaunchedEffect(notice) { delay(3500); app.chatNotice = null }
@@ -380,29 +389,33 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                         val older = reversed.getOrNull(index + 1)?.last()
                         val first = older == null || !sameGroup(older, group.first())
                         val last = newer == null || !sameGroup(message, newer)
-                        val author = if (!thread.isSupport && !message.isMine && first) message.author.ifBlank { "Участник" } else null
+                        val member = app.participant(message.authorId)
+                        val shownName = ChatNames.author(message, member)
+                        val author = if (!thread.isSupport && !message.isMine && first) shownName else null
+                        val roleTag = if (author != null && !message.asCompany) member?.roleTag else null
                         val openAuthor = {
                             message.authorId?.takeIf { !message.isMine && !message.asCompany && !thread.isSupport }?.let { uid ->
-                                app.openMiniProfile(MiniProfile(uid, message.author, avatarUrl = message.authorAvatarUrl))
+                                app.openMiniProfile(MiniProfile(uid, shownName, member?.city.orEmpty(), member?.role ?: "client", message.authorAvatarUrl, member?.isAdmin == true))
                             }
                             Unit
                         }
                         Row(verticalAlignment = Alignment.Bottom) {
                             if (showsAvatars && !message.isMine) {
                                 Box(Modifier.width(32.dp).pressable(0.9f, onClick = openAuthor)) {
-                                    if (last) Avatar(message.authorAvatarUrl, message.author, 28)
+                                    if (last) Avatar(message.authorAvatarUrl, shownName, 28)
                                 }
                                 Spacer(Modifier.width(6.dp))
                             }
                             Box(Modifier.weight(1f)) {
                                 if (group.size >= 2) {
-                                    AlbumBubble(group, author) { i -> viewer = group.mapNotNull { it.mediaUrl } to i }
+                                    AlbumBubble(group, author, roleTag) { i -> viewer = group.mapNotNull { it.mediaUrl } to i }
                                 } else if (message.kind == MessageKind.Poll && message.poll != null) {
                                     PollBubble(app, message) { menuFor = message.id }
                                 } else {
                                     MessageBubble(
                                         message = message,
                                         authorName = author,
+                                        roleTag = roleTag,
                                         onAuthorTap = openAuthor,
                                         quoted = message.replyTo?.let { id -> messages.firstOrNull { it.id == id } },
                                         first = first,
@@ -423,6 +436,12 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                     }
                 }
             }
+        }
+        val mentions = if (thread.kind == ChatThreadKind.Trip) {
+            ChatNames.mentionMatches(ChatNames.mentionQuery(app.chatDraft), app.participants, app.myUserId)
+        } else emptyList()
+        if (mentions.isNotEmpty() && !recording) {
+            MentionBar(mentions) { app.chatDraft = ChatNames.insertMention(app.chatDraft, it.name) }
         }
         Box {
             InputBar(
@@ -450,16 +469,29 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 if (thread.kind == ChatThreadKind.Trip) {
                     DropdownMenuItem(text = { Text("Опрос") }, leadingIcon = { Icon(Icons.Filled.Poll, null) }, onClick = { attachMenu = false; composingPoll = true })
                 }
-                if (thread.isSupport && app.companions.isNotEmpty()) {
+                // Passenger data (own profile + companions) goes to the manager - support chat only.
+                if (thread.isSupport && app.account.isRegistered) {
                     DropdownMenuItem(text = { Text("Данные для билета") }, leadingIcon = { Icon(Icons.Filled.Badge, null) }, onClick = {
                         attachMenu = false
-                        app.chatDraft = CompanionFormat.message(app.companions)
+                        ticketData = true
                     })
                 }
             }
         }
     }
+    if (ticketData) {
+        TicketDataSheet(app, onDismiss = { ticketData = false }) { chosen ->
+            val text = CompanionFormat.message(chosen)
+            if (text.isNotEmpty()) {
+                val draft = app.chatDraft
+                app.chatDraft = text
+                app.sendChat()
+                app.chatDraft = draft
+            }
+        }
+    }
     viewer?.let { (urls, start) -> ImageViewerDialog(urls, start) { viewer = null } }
+    if (app.participantsShown) ParticipantsSheet(app)
     if (composingPoll) PollComposerSheet(onDismiss = { composingPoll = false }) { app.createPoll(it) }
 }
 
@@ -479,9 +511,21 @@ private fun ChatHeader(app: AppModel, thread: ChatThread) {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = TnaColor.ink, modifier = Modifier.size(20.dp)) }
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            // Group: member count, opens the participant list; 1:1: opens the other person's card.
+            val count = app.participants.size
+            val subtitle = if (thread.kind == ChatThreadKind.Trip) {
+                if (count > 0) "$count ${pluralRU(count, "участник", "участника", "участников")}" else "участники · нажми"
+            } else thread.subtitle
+            val opens = thread.kind == ChatThreadKind.Trip || (thread.kind == ChatThreadKind.Direct && thread.otherUserId != null)
+            Column(
+                Modifier.weight(1f).pressable(0.99f, enabled = opens) {
+                    if (thread.kind == ChatThreadKind.Trip) app.participantsShown = true
+                    else thread.otherUserId?.let { app.openMiniProfile(it) }
+                },
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
                 Text(thread.title, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (thread.subtitle.isNotBlank()) Text(thread.subtitle, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle.isNotBlank()) Text(subtitle, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!thread.isSupport) {
                 Box(
@@ -539,6 +583,7 @@ private fun EmptyChatState(thread: ChatThread) {
 private fun MessageBubble(
     message: Message,
     authorName: String?,
+    roleTag: String? = null,
     onAuthorTap: () -> Unit = {},
     quoted: Message?,
     first: Boolean,
@@ -573,8 +618,14 @@ private fun MessageBubble(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (authorName != null) {
-                Text(authorName, color = authorColor(authorName), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                    modifier = Modifier.padding(horizontal = if (isImage) 8.dp else 0.dp).pressable(0.97f, onClick = onAuthorTap))
+                Row(
+                    Modifier.padding(horizontal = if (isImage) 8.dp else 0.dp).pressable(0.97f, onClick = onAuthorTap),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(authorName, color = authorColor(authorName), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    roleTag?.let { RoleTag(it) }
+                }
             }
             quoted?.let { QuotedPreview(it, mine) }
             when (message.kind) {
@@ -694,7 +745,7 @@ private fun QuotedPreview(message: Message, mine: Boolean) {
 
 /// Several photos sent together: a tight grid, at most four tiles, "+N" on the last.
 @Composable
-private fun AlbumBubble(messages: List<Message>, authorName: String?, onTap: (Int) -> Unit) {
+private fun AlbumBubble(messages: List<Message>, authorName: String?, roleTag: String?, onTap: (Int) -> Unit) {
     val mine = messages.first().isMine
     val shown = messages.take(4)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
@@ -702,7 +753,12 @@ private fun AlbumBubble(messages: List<Message>, authorName: String?, onTap: (In
             Modifier.clip(RoundedCornerShape(18.dp)).background(if (mine) TnaColor.accentBrush else Brush.linearGradient(listOf(TnaColor.surface, TnaColor.surface))).padding(4.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            if (authorName != null) Text(authorName, color = authorColor(authorName), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp, top = 4.dp))
+            if (authorName != null) {
+                Row(Modifier.padding(start = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(authorName, color = authorColor(authorName), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    roleTag?.let { RoleTag(it) }
+                }
+            }
             shown.chunked(2).forEachIndexed { rowIndex, row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     row.forEachIndexed { col, m ->
@@ -748,6 +804,15 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
         if (message.status == MessageStatus.Failed && message.kind == MessageKind.Text) {
             DropdownMenuItem(text = { Text("Повторить") }, leadingIcon = { Icon(Icons.Filled.Refresh, null) }, onClick = { onDismiss(); app.retry(message) })
         }
+        val photoUrl = message.mediaUrl
+        if (message.kind == MessageKind.Image && message.status == MessageStatus.Sent && photoUrl != null && android.os.Build.VERSION.SDK_INT >= 29) {
+            DropdownMenuItem(text = { Text("Сохранить в галерею") }, leadingIcon = { Icon(Icons.Filled.Download, null) }, onClick = {
+                onDismiss()
+                app.launch {
+                    app.chatNotice = if (savePhotoToGallery(context, photoUrl)) "Сохранено в галерею" else "Не удалось сохранить фото"
+                }
+            })
+        }
         if (app.chatStaff && thread.kind == ChatThreadKind.Trip && message.status == MessageStatus.Sent) {
             val isPinned = message.pinnedAt != null || app.pinned.any { it.id == message.id }
             DropdownMenuItem(
@@ -765,6 +830,17 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
                 leadingIcon = { Icon(Icons.Filled.Delete, null, tint = TnaColor.danger) },
                 onClick = { onDismiss(); app.deleteMessage(message) },
             )
+        }
+        // Moderation: only between participants; company ("TNA") messages have no personal author.
+        if (!message.isMine && !message.asCompany && !thread.isSupport) {
+            DropdownMenuItem(text = { Text("Пожаловаться") }, leadingIcon = { Icon(Icons.Filled.Report, null) }, onClick = { onDismiss(); app.reportMessage(message) })
+            if (message.authorId != null) {
+                DropdownMenuItem(
+                    text = { Text("Заблокировать", color = TnaColor.danger) },
+                    leadingIcon = { Icon(Icons.Filled.Block, null, tint = TnaColor.danger) },
+                    onClick = { onDismiss(); app.blockAuthor(message) },
+                )
+            }
         }
     }
 }

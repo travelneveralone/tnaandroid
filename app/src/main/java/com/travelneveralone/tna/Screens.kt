@@ -133,6 +133,8 @@ fun Root(app: AppModel) {
                 containerColor = TnaColor.bg,
             )
         }
+        // Above everything: the biometric lock and its post-login offer.
+        AppLockLayer(app)
     }
 }
 
