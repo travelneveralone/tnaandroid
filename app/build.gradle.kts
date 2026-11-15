@@ -38,8 +38,9 @@ android {
         }
         create("prod") {
             dimension = "env"
-            buildConfigField("String", "SUPABASE_URL", "\"https://bodkeiwsslabeygltxfv.supabase.co\"")
-            buildConfigField("String", "SUPABASE_ANON_KEY", "\"sb_publishable_lD96OrXfbUIq3eilEea3cw_nPixUiDW\"")
+            // Self-hosted Supabase on our own server in Russia (same as iOS AppConfig).
+            buildConfigField("String", "SUPABASE_URL", "\"https://api.travelneveralone.com\"")
+            buildConfigField("String", "SUPABASE_ANON_KEY", "\"sb_publishable_-VbODF6P1E_LIbF8di-wUS_FxOduIzN\"")
             buildConfigField("boolean", "IS_PROD", "true")
             resValue("string", "app_name", "TNA")
         }
