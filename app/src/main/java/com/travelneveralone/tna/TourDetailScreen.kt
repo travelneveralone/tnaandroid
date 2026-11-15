@@ -1,5 +1,7 @@
 package com.travelneveralone.tna
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -266,7 +268,10 @@ private fun HeroCarousel(images: List<String>, colors: List<Long>) {
                 delay(4000)
                 pager.animateScrollToPage(pager.currentPage + 1)
             }
-            HorizontalPager(state = pager, modifier = Modifier.matchParentSize()) { page ->
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.matchParentSize().semantics { contentDescription = "Фотографии тура. Смахните влево или вправо" },
+            ) { page ->
                 AsyncImage(
                     model = images[page % images.size],
                     contentDescription = null,

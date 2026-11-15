@@ -240,8 +240,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         chatDraft = ""
         editingMessage?.let { target ->
             editingMessage = null
+            val before = messages.firstOrNull { it.id == target.id }
             messages = messages.map { if (it.id == target.id) it.copy(text = text, edited = true) else it }
-            viewModelScope.launch { runCatching { repo.editMessage(target.id, text) } }
+            viewModelScope.launch {
+                runCatching { repo.editMessage(target.id, text) }.onFailure {
+                    // Roll back so the bubble never shows text the server does not have.
+                    if (before != null) messages = messages.map { m -> if (m.id == target.id) before else m }
+                    chatNotice = "Не удалось изменить сообщение"
+                }
+            }
             return
         }
         val reply = replyingTo
@@ -272,9 +279,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteMessage(message: Message) {
+        val snapshot = messages
         messages = messages.filter { it.id != message.id }
         if (message.status == MessageStatus.Failed) return
-        viewModelScope.launch { runCatching { repo.deleteMessage(message.id) } }
+        viewModelScope.launch {
+            runCatching { repo.deleteMessage(message.id) }.onFailure {
+                if (message.status != MessageStatus.Queued) {
+                    messages = snapshot
+                    chatNotice = "Не удалось удалить сообщение"
+                }
+            }
+        }
     }
 
     fun toggleMute(thread: ChatThread) {
@@ -344,7 +359,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun vote(messageId: UUID, options: List<String>) {
         viewModelScope.launch {
             val ok = repo.votePoll(messageId, options)
-            if (!ok) chatNotice = "Голос не принят — опрос уже закрыт или изменился"
+            if (!ok) chatNotice = "Не удалось проголосовать: опрос закрыт или изменился"
             refreshPoll(messageId)
         }
     }
@@ -368,10 +383,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun createPoll(poll: PollData) {
         val thread = openChat ?: return
+        if (!network.isOnline) {
+            chatNotice = "Опросы отправляются только онлайн"
+            return
+        }
         viewModelScope.launch {
             val live = resolveThread(thread)
             runCatching { repo.createPoll(live.id, poll) }
-                .onFailure { chatNotice = "Опрос не отправился — проверь связь" }
+                .onFailure { chatNotice = "Не удалось создать опрос" }
             reloadOpenChat()
         }
     }
@@ -396,7 +415,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val live = resolveThread(thread)
             runCatching { repo.sendAttachment(live.id, bytes, kind, ext, contentType, name, durationMs) }
-                .onFailure { chatNotice = "Не отправилось — можно повторить" }
+                .onFailure { chatNotice = "Не удалось отправить вложение" }
             uploading = false
             reloadOpenChat()
         }
@@ -502,8 +521,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         bookings = runCatching { repo.fetchBookings() }.getOrElse { if (AppConfig.useMock) Mock.bookings else bookings }
     }
 
+    /// "loading" | "loaded" | "failed" - an error shows only when there is nothing cached.
+    var newsState by mutableStateOf("loaded")
+    var scheduleState by mutableStateOf("loaded")
+
     fun loadNews() = viewModelScope.launch {
-        news = runCatching { repo.fetchNews() }.getOrElse { if (AppConfig.useMock) Mock.news else news }
+        if (news.isEmpty()) newsState = "loading"
+        runCatching { repo.fetchNews() }
+            .onSuccess { news = it; newsState = "loaded" }
+            .onFailure {
+                if (AppConfig.useMock) news = Mock.news
+                newsState = if (news.isEmpty()) "failed" else "loaded"
+            }
     }
 
     fun loadReviews(tourId: UUID? = null) = viewModelScope.launch {
@@ -513,12 +542,19 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadSchedule() = viewModelScope.launch {
-        schedule = runCatching { repo.fetchDepartures() }.getOrElse { if (AppConfig.useMock) Mock.schedule else schedule }
+        if (schedule.isEmpty()) scheduleState = "loading"
+        runCatching { repo.fetchDepartures() }
+            .onSuccess { schedule = it; scheduleState = "loaded" }
+            .onFailure {
+                if (AppConfig.useMock) schedule = Mock.schedule
+                scheduleState = if (schedule.isEmpty()) "failed" else "loaded"
+            }
     }
 
     fun loadCountries() = viewModelScope.launch {
-        countries = runCatching { repo.myCountries() }.getOrDefault(emptyMap())
-        tnaCountryCodes = runCatching { repo.tnaCodes() }.getOrDefault(emptySet())
+        // Offline: keep what is already on screen instead of blanking the map.
+        countries = runCatching { repo.myCountries() }.getOrDefault(countries)
+        tnaCountryCodes = runCatching { repo.tnaCodes() }.getOrDefault(tnaCountryCodes)
     }
 
     fun loadCompanions() = viewModelScope.launch {
@@ -570,17 +606,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /// Avatar upload/remove failure, shown as an alert (iOS EditProfileSheet).
+    var avatarError by mutableStateOf<String?>(null)
+
     fun uploadAvatar(bytes: ByteArray) {
         avatarBusy = true
         viewModelScope.launch {
             val url = repo.uploadAvatar(bytes)
-            if (url != null && repo.setAvatarUrl(url)) avatarUrl = url
+            when {
+                url == null -> avatarError = "Фото не загрузилось — нет связи"
+                !repo.setAvatarUrl(url) -> avatarError = "Фото загрузилось, но не прописалось в профиль"
+                else -> avatarUrl = url
+            }
             avatarBusy = false
         }
     }
 
     fun removeAvatar() {
-        viewModelScope.launch { if (repo.setAvatarUrl(null)) avatarUrl = null }
+        avatarBusy = true
+        viewModelScope.launch {
+            if (repo.setAvatarUrl(null)) avatarUrl = null else avatarError = "Не удалось убрать фото"
+            avatarBusy = false
+        }
     }
 
     fun applyFriendCode(code: String) {

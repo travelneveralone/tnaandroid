@@ -314,4 +314,39 @@ class DomainRulesTest {
             IdentityDoc().withSuggestedKind("2013-11-14", at).kind,
         )
     }
+
+    @Test
+    fun countryMapCycleAndCounters() {
+        // Map tap order matches iOS: был → живу → хочу → снять.
+        assertEquals(CountryStatus.Visited, CountryMapRules.next(null))
+        assertEquals(CountryStatus.Lives, CountryMapRules.next(CountryStatus.Visited))
+        assertEquals(CountryStatus.Wants, CountryMapRules.next(CountryStatus.Lives))
+        assertNull(CountryMapRules.next(CountryStatus.Wants))
+        val mine = mapOf("RUS" to CountryStatus.Lives, "ITA" to CountryStatus.Wants)
+        val tna = setOf("RUS", "GEO")
+        // A TNA country counts as «был» unless the person set something else.
+        assertEquals(CountryStatus.Visited, CountryMapRules.display(mine, tna)["GEO"])
+        assertEquals(CountryStatus.Lives, CountryMapRules.display(mine, tna)["RUS"])
+        assertEquals(2, CountryMapRules.beenCount(mine, tna))
+        assertEquals(1, CountryMapRules.wantsCount(mine))
+    }
+
+    @Test
+    fun countryListFilters() {
+        val all = listOf("GEO" to "Грузия", "ITA" to "Италия", "RUS" to "Россия")
+        val display = mapOf("ITA" to CountryStatus.Wants, "RUS" to CountryStatus.Lives)
+        val every = CountryStatus.entries.toSet()
+        assertEquals(all, CountryMapRules.filtered(all, display, every, ""))
+        assertEquals(listOf("ITA" to "Италия"), CountryMapRules.filtered(all, display, setOf(CountryStatus.Wants), ""))
+        // Search ignores the legend filter.
+        assertEquals(listOf("GEO" to "Грузия"), CountryMapRules.filtered(all, display, setOf(CountryStatus.Wants), "груз"))
+    }
+
+    @Test
+    fun flyoverRegionIsCentredOnPlace() {
+        val place = VisitedPlace(name = "Камчатка", latitude = 53.0, longitude = 158.0, color = 0)
+        val r = MapRegion.around(place)
+        assertEquals(158.0, r.minLon + r.lonSpan / 2, 0.001)
+        assertEquals(53.0, r.minLat + r.latSpan / 2, 0.001)
+    }
 }

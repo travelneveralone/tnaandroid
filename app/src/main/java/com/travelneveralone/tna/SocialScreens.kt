@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SupervisorAccount
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -91,12 +92,14 @@ fun MiniProfileSheet(app: AppModel, profile: MiniProfile) {
     var full by remember(profile.userId) { mutableStateOf<PublicProfile?>(null) }
     var loading by remember(profile.userId) { mutableStateOf(true) }
     var countries by remember(profile.userId) { mutableStateOf<Map<String, CountryStatus>>(emptyMap()) }
+    var countriesLoaded by remember(profile.userId) { mutableStateOf(false) }
     var tnaCodes by remember(profile.userId) { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(profile.userId) {
         full = app.repo.publicProfile(profile.userId)
         loading = false
         countries = app.repo.publicCountries(profile.userId)
         tnaCodes = app.repo.tnaCodes(profile.userId)
+        countriesLoaded = true
     }
     val p = full
     val name = p?.name?.takeIf { it.isNotBlank() } ?: profile.name
@@ -234,12 +237,10 @@ fun MiniProfileSheet(app: AppModel, profile: MiniProfile) {
                         }
                     }
                 }
-                if (countries.isNotEmpty() || tnaCodes.isNotEmpty()) {
+                if (countriesLoaded) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SectionTitle("Карта стран")
-                        Box(Modifier.padding(horizontal = 20.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, TnaColor.stroke, RoundedCornerShape(20.dp))) {
-                            WorldMap(countries, tnaCodes) {}
-                        }
+                        Box(Modifier.padding(horizontal = 20.dp)) { CountriesCompact(countries, tnaCodes) }
                     }
                 }
                 if (p != null && p.achievements.isNotEmpty()) {
@@ -280,7 +281,7 @@ fun MiniProfileSheet(app: AppModel, profile: MiniProfile) {
             }
             if (canWrite) {
                 Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    PrimaryButton("Написать", icon = Icons.AutoMirrored.Filled.Chat) { app.writeTo(profile) }
+                    PrimaryButton("Написать сообщение", icon = Icons.AutoMirrored.Filled.Send) { app.writeTo(profile) }
                 }
             }
         }

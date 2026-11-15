@@ -124,6 +124,15 @@ fun Root(app: AppModel) {
         if (app.tripModeShown) TripModeScreen(app)
         app.miniProfile?.let { MiniProfileSheet(app, it) }
         app.cropSource?.let { AvatarCropScreen(app, it) }
+        app.avatarError?.let { message ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { app.avatarError = null },
+                confirmButton = { androidx.compose.material3.TextButton({ app.avatarError = null }) { Text("OK") } },
+                title = { Text("Ошибка") },
+                text = { Text(message) },
+                containerColor = TnaColor.bg,
+            )
+        }
     }
 }
 

@@ -63,52 +63,11 @@ internal object WorldAtlas {
     }
 }
 
-@Composable
-fun WorldMap(
-    statuses: Map<String, CountryStatus>,
-    tnaCodes: Set<String>,
-    onTap: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    var countries by remember { mutableStateOf<List<GeoCountry>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        countries = withContext(Dispatchers.Default) { WorldAtlas.load(context) }
-    }
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(220.dp)
-            .pointerInput(countries) {
-                detectTapGestures { offset ->
-                    countryAt(countries, offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
-                        ?.let(onTap)
-                }
-            },
-    ) {
-        drawRect(Color.hex(0xE7EEF4))
-        countries.forEach { country ->
-            val status = statuses[country.code]
-            val fill = when {
-                status != null -> Color.hex(status.color)
-                country.code in tnaCodes -> Color.hex(0xD7DEE6)
-                else -> Color.White
-            }
-            country.rings.forEach { ring ->
-                val path = Path()
-                for (i in ring.indices step 2) {
-                    val x = (ring[i] + 180f) / 360f * size.width
-                    val y = (90f - ring[i + 1]) / 180f * size.height
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                path.close()
-                drawPath(path, fill)
-                drawPath(path, Color.hex(0xC5CED6), style = Stroke(1f))
-            }
-        }
-    }
-}
+/// The country under a point of a w×h equirectangular map, if any.
+internal fun WorldAtlas.countryAt(countries: List<GeoCountry>, x: Float, y: Float, width: Float, height: Float): String? =
+    findCountry(countries, x, y, width, height)
 
-private fun countryAt(countries: List<GeoCountry>, x: Float, y: Float, width: Float, height: Float): String? {
+private fun findCountry(countries: List<GeoCountry>, x: Float, y: Float, width: Float, height: Float): String? {
     if (width <= 0f || height <= 0f) return null
     val lon = x / width * 360f - 180f
     val lat = 90f - y / height * 180f

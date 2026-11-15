@@ -1,5 +1,8 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.animation.core.Animatable
@@ -100,7 +103,7 @@ fun PassportScreen(app: AppModel) {
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             item { PassportHeader(app, data) }
-            item { PassportMap(data.places) }
+            item { PassportMap(data.places, app.network.isOnline) }
             item { StatsGrid(data.stats) }
             item { LevelCard(data) }
             item { StampsSection(data.stamps) }
@@ -174,11 +177,36 @@ private fun PassportHeader(app: AppModel, data: PassportData) {
 
 /// Visited places on a flat world map cropped to fit them (iOS: MapKit; same framing rule).
 @Composable
-private fun PassportMap(places: List<VisitedPlace>) {
+private fun PassportMap(places: List<VisitedPlace>, online: Boolean) {
     val context = LocalContext.current
     var countries by remember { mutableStateOf<List<GeoCountry>>(emptyList()) }
     LaunchedEffect(Unit) { countries = withContext(Dispatchers.Default) { WorldAtlas.load(context) } }
-    val region = remember(places) { MapRegion.fitting(places) }
+    val fitted = remember(places) { MapRegion.fitting(places) }
+    // Animated camera: the «Облететь» flyover hops place to place, then zooms back out.
+    val camera = remember(places) { fitted.values().map { Animatable(it) } }
+    val region = MapRegion(camera[0].value.toDouble(), camera[1].value.toDouble(), camera[2].value.toDouble(), camera[3].value.toDouble())
+    var flying by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    suspend fun flyTo(target: MapRegion, ms: Int) = kotlinx.coroutines.coroutineScope {
+        target.values().forEachIndexed { i, v ->
+            launch { camera[i].animateTo(v, androidx.compose.animation.core.tween(ms, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+        }
+    }
+    fun flyover() {
+        if (flying) return
+        flying = true
+        scope.launch {
+            try {
+                for (place in places) {
+                    flyTo(MapRegion.around(place), 1500)
+                    kotlinx.coroutines.delay(400)
+                }
+                flyTo(fitted, 1400)
+            } finally {
+                flying = false
+            }
+        }
+    }
     val shape = RoundedCornerShape(24.dp)
     Box(
         Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(240.dp).clip(shape).border(1.dp, TnaColor.stroke, shape),
@@ -221,11 +249,36 @@ private fun PassportMap(places: List<VisitedPlace>) {
                     .background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 12.dp, vertical = 7.dp),
             )
         }
+        // Offline badge only when the network is really down; a flyover needs at least two places.
+        if (!online) {
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(12.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(androidx.compose.material.icons.Icons.Filled.WifiOff, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("офлайн", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        } else if (places.size >= 2) {
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(12.dp).pressable(0.94f, enabled = !flying) { flyover() }.clip(CircleShape)
+                    .background(if (flying) androidx.compose.ui.graphics.SolidColor(Color.Black.copy(alpha = 0.55f)) else TnaColor.accentBrush)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(if (flying) androidx.compose.material.icons.Icons.Filled.Flight else androidx.compose.material.icons.Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Облететь", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
 /// Same framing as iOS `region(fitting:)`: Russia by default, 1.6× margin, ≥ 4° span.
 data class MapRegion(val minLon: Double, val minLat: Double, val lonSpan: Double, val latSpan: Double) {
+    fun values(): List<Float> = listOf(minLon.toFloat(), minLat.toFloat(), lonSpan.toFloat(), latSpan.toFloat())
+
     companion object {
         fun fitting(places: List<VisitedPlace>): MapRegion {
             val first = places.firstOrNull() ?: return centered(52.0, 96.0, 60.0, 120.0)
@@ -239,6 +292,9 @@ data class MapRegion(val minLon: Double, val minLat: Double, val lonSpan: Double
                 maxOf((lons.max() - lons.min()) * 1.6, 4.0),
             )
         }
+
+        /// Close-up on one place for the flyover (iOS: camera at ~900 km).
+        fun around(place: VisitedPlace): MapRegion = centered(place.latitude, place.longitude, 8.0, 12.0)
 
         private fun centered(lat: Double, lon: Double, latSpan: Double, lonSpan: Double) =
             MapRegion(lon - lonSpan / 2, lat - latSpan / 2, lonSpan, latSpan)

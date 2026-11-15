@@ -294,13 +294,15 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
+        val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            ?: run { app.chatNotice = "Не удалось прочитать файл"; return@rememberLauncherForActivityResult }
         app.sendImage(bytes)
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val resolver = context.contentResolver
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
+        val bytes = runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            ?: run { app.chatNotice = "Не удалось прочитать файл"; return@rememberLauncherForActivityResult }
         val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         } ?: "Файл"
@@ -311,7 +313,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     val recorder = remember { VoiceRecorder(context) }
     var recording by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) recording = recorder.start() else app.chatNotice = "Нет доступа к микрофону — включи его в настройках Android"
+        if (granted) recording = recorder.start() else app.chatNotice = "Доступ к микрофону запрещён — включается в настройках Android."
     }
     var attachMenu by remember { mutableStateOf(false) }
     var composingPoll by remember { mutableStateOf(false) }

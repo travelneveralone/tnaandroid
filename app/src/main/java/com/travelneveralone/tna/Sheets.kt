@@ -1,5 +1,6 @@
 package com.travelneveralone.tna
 
+import androidx.compose.material.icons.filled.Refresh
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
@@ -225,7 +226,11 @@ fun NewsSheet(app: AppModel) {
     SheetColumn(spacing = 16) {
         Text("НОВОСТИ", style = displayStyle(28))
         if (app.news.isEmpty()) {
-            EmptyState(Icons.Filled.Newspaper, null, "Пока новостей нет")
+            when (app.newsState) {
+                "loading" -> Box(Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = TnaColor.accent) }
+                "failed" -> EmptyState(Icons.Filled.Newspaper, null, "Не удалось загрузить новости")
+                else -> EmptyState(Icons.Filled.Newspaper, null, "Пока новостей нет")
+            }
         }
         app.news.forEach { item ->
             val shape = RoundedCornerShape(18.dp)
@@ -673,7 +678,7 @@ fun CertificateSheet(app: AppModel) {
     viewing?.let { cert ->
         SheetColumn {
             Text("← Назад", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.pressable { viewing = null })
-            CertificateCard(cert)
+            CertificateCard(cert, app.isProd)
             if (cert.status == "paid") ShareCertificate(cert)
         }
         return
@@ -689,7 +694,15 @@ fun CertificateSheet(app: AppModel) {
                 modifier = Modifier.pressable { state.certificate?.paymentUrl?.let { open(it) } }.padding(6.dp))
         }
         "done" -> SheetColumn {
-            state.certificate?.let { CertificateCard(it); if (it.status == "paid") ShareCertificate(it) }
+            state.certificate?.let { cert ->
+                CertificateCard(cert, app.isProd)
+                if (cert.status == "paid") ShareCertificate(cert)
+                else {
+                    Text("Оплата ещё не подтвердилась. Проверить можно через минуту.", color = TnaColor.subtle, fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton(if (state.checking) "Проверяем…" else "Проверить оплату", enabled = !state.checking, icon = Icons.Filled.Refresh) { check() }
+                }
+            }
             PrimaryButton("Готово", icon = Icons.Filled.ThumbUp) { app.sheet = null }
         }
         else -> SheetColumn {
@@ -770,11 +783,17 @@ fun CertificateSheet(app: AppModel) {
 }
 
 @Composable
-private fun CertificateCard(cert: GiftCertificate) {
+private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(TnaColor.ink, Color.hex(0x16264F)))).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BrandMark(40, prod)
+            Spacer(Modifier.weight(1f))
+            Text(if (cert.status == "paid") "АКТИВЕН" else "ЖДЁТ ОПЛАТЫ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(horizontal = 10.dp, vertical = 5.dp))
+        }
         Text("ПОДАРОЧНЫЙ СЕРТИФИКАТ", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Text(cert.amountText, style = displayBrushStyle(44))
         if (cert.recipientName.isNotBlank()) Text("Для: ${cert.recipientName}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -883,71 +902,6 @@ private fun ToggleRow(title: String, subtitle: String?, on: Boolean, enabled: Bo
 
 // MARK: - Countries
 
-@Composable
-fun CountriesSheet(app: AppModel) {
-    var query by remember { mutableStateOf("") }
-    fun set(code: String, next: CountryStatus?) {
-        app.countries = if (next == null) app.countries - code else app.countries + (code to next)
-        app.launch { app.repo.setCountry(code, next) }
-    }
-    SheetColumn(spacing = 16) {
-        Text("МОИ СТРАНЫ", style = displayStyle(28))
-        Text("Отмечай, где живёшь, где был и куда хочешь — нажми на страну на карте или в списке.", color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).border(1.dp, TnaColor.stroke, RoundedCornerShape(20.dp))) {
-            WorldMap(app.countries, app.tnaCountryCodes) { code ->
-                val order = CountryStatus.entries
-                val current = app.countries[code]
-                set(code, if (current == null) order.first() else order.getOrNull(order.indexOf(current) + 1))
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CountryStatus.entries.forEach { status ->
-                val count = app.countries.values.count { it == status }
-                Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(TnaColor.surface).padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("$count", style = displayStyle(24, Color.hex(status.color)))
-                    Text(status.title, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-        BookingField("Найти страну", query) { query = it }
-        val rows = CountryNamesRU.map.entries
-            .filter { query.isBlank() || it.value.contains(query, ignoreCase = true) }
-            .sortedWith(compareBy({ !app.countries.containsKey(it.key) }, { it.value }))
-            .let { if (query.isBlank()) it.filter { row -> app.countries.containsKey(row.key) }.ifEmpty { it.take(12) } else it.take(40) }
-        val shape = RoundedCornerShape(18.dp)
-        Column(Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape)) {
-            rows.forEachIndexed { index, (code, name) ->
-                val status = app.countries[code]
-                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(name, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        if (code in app.tnaCountryCodes) Text("TNA", color = TnaColor.accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                    }
-                    CountryStatus.entries.forEach { option ->
-                        val on = status == option
-                        Text(
-                            option.title,
-                            color = if (on) Color.White else TnaColor.ink,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(start = 4.dp).clip(CircleShape)
-                                .background(if (on) Color.hex(option.color) else TnaColor.elevated)
-                                .pressable(0.92f) { set(code, if (on) null else option) }
-                                .padding(horizontal = 9.dp, vertical = 5.dp),
-                        )
-                    }
-                }
-                if (index < rows.lastIndex) RowDivider()
-            }
-        }
-    }
-}
-
-// MARK: - Edit profile
-
 // MARK: - Compass
 
 @Composable
@@ -1047,7 +1001,13 @@ fun ScheduleSheet(app: AppModel) {
                 seasons.forEach { s -> SeasonChip(s, season == s) { season = s } }
             }
         }
-        if (app.schedule.isEmpty()) EmptyState(Icons.Filled.CalendarMonth, null, "Пока нет заездов")
+        if (app.schedule.isEmpty()) {
+            when (app.scheduleState) {
+                "loading" -> Box(Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = TnaColor.accent) }
+                "failed" -> EmptyState(Icons.Filled.CalendarMonth, null, "Не удалось загрузить календарь")
+                else -> EmptyState(Icons.Filled.CalendarMonth, null, "Пока нет заездов")
+            }
+        }
         rows.groupBy { it.month }.toSortedMap().forEach { (month, items) ->
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(monthTitle(month).uppercase(), color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)

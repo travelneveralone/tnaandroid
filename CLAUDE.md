@@ -45,7 +45,8 @@ MVVM, одна точка сборки зависимостей в `AppModel` (�
 - `PassportScreen.kt` ← `Passport/`, `ChatScreens.kt` + `ChatExtras.kt` ← `Chats/` (опросы, закрепы, голосовые, файлы), `ProfileScreen.kt` ← `Profile/ProfileView`
 - `SocialScreens.kt` ← `Profile/MiniProfileSheet`, `Passport/YearRecapView` + `PassportShareCard`, `Trip/TripView`
 - `ProfileEditor.kt` ← `Profile/EditProfileSheet`, `CitizenshipPicker`, `CompanionsView`, `AvatarCropSheet`
-- `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Countries, Compass, Schedule, Trip)
+- `Countries.kt` ← `Countries/` (карта стран: фильтр-легенда, полный экран с зумом, компактный вид в мини-профиле); `WorldMap.kt` - только геометрия
+- `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Compass, Schedule, Trip)
 - `Media.kt` — полноэкранный просмотр фото
 
 Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, — только Compose state (`mutableStateOf`), иначе экран не перерисуется.
