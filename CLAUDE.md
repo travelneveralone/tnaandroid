@@ -48,6 +48,7 @@ MVVM, одна точка сборки зависимостей в `AppModel` (�
 - `Countries.kt` ← `Countries/` (карта стран: фильтр-легенда, полный экран с зумом, компактный вид в мини-профиле); `WorldMap.kt` - только геометрия
 - `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Compass, Schedule, Trip)
 - `Media.kt` — полноэкранный просмотр фото
+- `PhoneField.kt` ← `Core/DesignSystem/PhoneField` (чип страны + номер по маске, выбор страны); `PhoneInput.kt` ← `Core/Services/PhoneInput` + `PhoneCountry` (чистая логика, `PhoneInputTest`); `PhoneCountryData.kt` генерирует `TNAiOS/Scripts/gen-phone-countries.cjs` вместе со Swift-таблицей — руками не править. Страна по умолчанию: SIM → сеть → регион системы (на iOS только регион)
 
 Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, — только Compose state (`mutableStateOf`), иначе экран не перерисуется.
 

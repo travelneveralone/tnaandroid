@@ -3,6 +3,7 @@ package com.travelneveralone.tna
 import kotlinx.coroutines.withContext
 import android.app.Application
 import android.content.Context
+import android.telephony.TelephonyManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -99,7 +100,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var avatarBusy by mutableStateOf(false)
     var chatDraft by mutableStateOf("")
     var reactionFor by mutableStateOf<UUID?>(null)
-    var loginPhone by mutableStateOf("+7 ")
+    /** Login phone: country chip + national digits (see PhoneField). */
+    var loginCountry by mutableStateOf(PhoneCountry.preferred(deviceRegion()))
+    var loginNational by mutableStateOf("")
+    /** "+79161234567". Setting it splits any typed or stored number into country + national. */
+    var loginPhone: String
+        get() = PhoneInput.e164(loginNational, loginCountry)
+        set(value) {
+            val (country, national) = PhoneInput.parse(value, loginCountry)
+            loginCountry = country
+            loginNational = national
+        }
     var loginCode by mutableStateOf("")
     var loginStep by mutableStateOf(0)
     var loginError by mutableStateOf<String?>(null)
@@ -961,4 +972,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = AppModel(app) as T
         }
     }
+}
+
+/**
+ * Where the user's number most likely comes from: the SIM's country, then the
+ * network's, then the system region. No permission needed.
+ */
+private fun AndroidViewModel.deviceRegion(): String? {
+    val telephony = getApplication<Application>().getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+    return listOfNotNull(
+        runCatching { telephony?.simCountryIso }.getOrNull(),
+        runCatching { telephony?.networkCountryIso }.getOrNull(),
+        java.util.Locale.getDefault().country,
+    ).firstOrNull { it.length == 2 }?.uppercase()
 }

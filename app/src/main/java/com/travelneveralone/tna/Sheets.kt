@@ -137,14 +137,17 @@ fun LoginSheet(app: AppModel) {
             Text("ВХОД", style = displayStyle(34))
             Text(
                 if (app.loginStep == 0) "Номер нужен, чтобы сохранять брони и находить твои прошлые поездки"
-                else "Отправили код на ${app.loginPhone}",
+                else "Отправили код на ${PhoneNumber.pretty(app.loginPhone)}",
                 color = TnaColor.subtle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
             )
         }
         if (app.loginStep == 0) {
-            LoginField(app.loginPhone, "+7 900 000-00-00", KeyboardType.Phone) { app.loginPhone = it }
+            PhoneField(app.loginCountry, app.loginNational, autoFocus = true, onChange = { country, national ->
+                app.loginCountry = country
+                app.loginNational = national
+            })
             if (testLogins.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     testLogins.forEach { login ->
@@ -161,7 +164,7 @@ fun LoginSheet(app: AppModel) {
             }
             PrimaryButton(
                 if (app.loginBusy) "Отправляем…" else "Получить код",
-                enabled = !app.loginBusy && app.loginPhone.count { it.isDigit() } >= 10,
+                enabled = !app.loginBusy && PhoneInput.isComplete(app.loginNational, app.loginCountry),
                 icon = Icons.AutoMirrored.Filled.ArrowForward,
             ) { app.requestCode() }
             ConsentFooter()

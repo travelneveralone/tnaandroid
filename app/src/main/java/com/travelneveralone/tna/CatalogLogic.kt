@@ -302,14 +302,17 @@ class CertificateRedemption {
 }
 
 /// The black price plate on a sale card (iOS `SalePlate`). Null when the tour is not cheaper.
+/// No season line: the tour name already carries it.
 data class SalePlate(
-    val season: String,
     val name: String,
     val daysLine: String,
     val price: Int,
     val base: Int,
     val mark: String,
+    /// «ДО 27 НОЯБРЯ», printed next to the campaign pill, not inside it.
     val until: String,
+    /// «ДО 27.11», fallback when the long form does not fit the card width.
+    val untilShort: String,
 ) {
     companion object {
         private val ru = java.util.Locale("ru")
@@ -321,16 +324,15 @@ data class SalePlate(
         fun make(tour: Tour, untilIso: String?): SalePlate? {
             val price = tour.salePriceFrom ?: return null
             if (!tour.hasSale) return null
-            val season = if (tour.seasonText == "Круглый год") "" else tour.seasonText
             val word = pluralRU(tour.days, "день", "дня", "дней")
             return SalePlate(
-                season = season,
                 name = tour.name.uppercase(ru),
                 daysLine = "${tour.days} $word".uppercase(ru),
                 price = price,
                 base = tour.priceFrom,
                 mark = (tour.saleLabel ?: "Акция").uppercase(ru),
                 until = untilLine(untilIso),
+                untilShort = untilShortLine(untilIso),
             )
         }
 
@@ -338,6 +340,12 @@ data class SalePlate(
         fun untilLine(iso: String?): String {
             val date = Dates.parseDay(iso) ?: return ""
             return "ДО ${date.dayOfMonth} ${months[date.monthValue - 1]}".uppercase(ru)
+        }
+
+        /// `yyyy-mm-dd` → «ДО 30.11».
+        fun untilShortLine(iso: String?): String {
+            val date = Dates.parseDay(iso) ?: return ""
+            return "ДО %02d.%02d".format(date.dayOfMonth, date.monthValue)
         }
     }
 }

@@ -779,9 +779,15 @@ fun seasonFromLabel(label: String): String? {
     return best?.second
 }
 
+/**
+ * Canonical phone forms (iOS `PhoneNumber`). A number written with '+' is already
+ * international and stays as is (+81 90… is Japan, not "8 → 7"); without '+' the
+ * legacy Russian rules apply: leading 8 → 7, bare 10 digits get 7.
+ */
 object PhoneNumber {
     fun digits(raw: String): String {
-        var d = raw.filter { it.isDigit() }
+        var d = raw.filter { it in '0'..'9' }
+        if ('+' in raw) return d
         if (d.length == 11 && d.startsWith("8")) d = "7" + d.drop(1)
         if (d.length == 10) d = "7$d"
         return d
@@ -792,11 +798,12 @@ object PhoneNumber {
         return if (d.isEmpty()) "" else "+$d"
     }
 
+    /** Display in the country's own style: "+7 999 000-00-00", "+31 6 12345678". Unknown code → E.164. */
     fun pretty(raw: String): String {
         val d = digits(raw)
-        if (d.length != 11 || !d.startsWith("7")) return e164(raw)
-        val a = d.drop(1)
-        return "+7 ${a.substring(0, 3)} ${a.substring(3, 6)}-${a.substring(6, 8)}-${a.substring(8, 10)}"
+        val (country, national) = PhoneInput.resolve(d, null) ?: return e164(raw)
+        if (national.isEmpty()) return e164(raw)
+        return "${country.dialCodeDisplay} ${PhoneInput.format(national, country.mask)}"
     }
 }
 

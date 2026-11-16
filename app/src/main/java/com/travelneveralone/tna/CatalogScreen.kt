@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -293,7 +292,8 @@ fun FeaturedCard(tour: Tour, campaign: CampaignOffer?, videoFile: java.io.File? 
                 tour.departures.firstOrNull()?.takeIf { it.spotsLeft in 1..3 }?.let { hot ->
                     FireBadge("Осталось ${hot.spotsLeft} ${pluralRU(hot.spotsLeft, "место", "места", "мест")}")
                 }
-                Text(tour.name.uppercase(), style = displayStyle(40, Color.White), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Long names wrap instead of being cut on the first line.
+                Text(tour.name.uppercase(), style = displayStyle(40, Color.White), maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(tour.tagline, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.CalendarMonth, null, tint = Color.White, modifier = Modifier.size(14.dp))
@@ -314,8 +314,8 @@ fun SmallTourCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
-            // Sale cards keep the photo as a frame around the black plate, so they grow.
-            .then(if (plate != null) Modifier.aspectRatio(0.72f) else Modifier.height(210.dp))
+            // A sale card is the same size as its neighbours: the grid stays even.
+            .height(210.dp)
             .clip(shape)
             .border(1.dp, Color.White.copy(alpha = 0.1f), shape)
             .pressable(0.97f, onClick = onClick),
@@ -326,7 +326,8 @@ fun SmallTourCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
             SalePlateView(plate, featured = false)
         } else {
             Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
-                Text(tour.name.uppercase(), style = displayStyle(24, Color.White), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Long names wrap instead of being cut on the first line.
+                Text(tour.name.uppercase(), style = displayStyle(24, Color.White), maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${tour.days} ${pluralRU(tour.days, "день", "дня", "дней")} · ", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     SalePriceLabel(tour, onDark = true, compact = true)
@@ -355,7 +356,8 @@ fun SmallTourCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
     }
 }
 
-/// Black plate on the cover: handle, destination, one white price, campaign pill.
+/// Black plate on the cover: destination, one white price, campaign pill + end date.
+/// The cover photo shows only as a thin frame around the plate.
 @Composable
 private fun SalePlateView(plate: SalePlate, featured: Boolean) {
     Column(
@@ -367,13 +369,11 @@ private fun SalePlateView(plate: SalePlate, featured: Boolean) {
             .padding(if (featured) 14.dp else 10.dp),
         verticalArrangement = Arrangement.spacedBy(if (featured) 10.dp else 6.dp),
     ) {
-        Row {
-            Text("@travelneveralone", color = Color.White.copy(alpha = 0.8f), fontSize = if (featured) 12.sp else 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            if (plate.season.isNotBlank()) Text(plate.season, color = Color.White.copy(alpha = 0.8f), fontSize = if (featured) 12.sp else 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        // No handle and no season row: the season is already in the name.
+        // The name takes whatever height the price block and the pill leave.
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Text(plate.name, style = displayStyle(if (featured) 34 else 22, Color.White), maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
-        Text(plate.name, style = displayStyle(if (featured) 34 else 22, Color.White), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.weight(1f))
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White)
                 .padding(horizontal = 10.dp, vertical = if (featured) 10.dp else 7.dp),
@@ -392,13 +392,41 @@ private fun SalePlateView(plate: SalePlate, featured: Boolean) {
                 maxLines = 2,
             )
         }
-        Row(
-            Modifier.fillMaxWidth().border(1.dp, Color.White.copy(alpha = 0.75f), CircleShape)
-                .padding(horizontal = 10.dp, vertical = if (featured) 8.dp else 6.dp),
-        ) {
-            Text(plate.mark, color = Color.White, fontSize = if (featured) 10.sp else 8.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            Spacer(Modifier.weight(1f))
-            if (plate.until.isNotBlank()) Text(plate.until, color = Color.White, fontSize = if (featured) 10.sp else 8.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+        CampaignRow(plate, featured)
+    }
+}
+
+/// Campaign name in the pill, end date beside it. «ДО 27 НОЯБРЯ» first,
+/// «ДО 27.11» when the long form would overflow the card.
+@Composable
+private fun CampaignRow(plate: SalePlate, featured: Boolean) {
+    val size = if (featured) 10.sp else 8.sp
+    var useShort by remember(plate) { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            plate.mark,
+            color = Color.White,
+            fontSize = size,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .border(1.dp, Color.White.copy(alpha = 0.75f), CircleShape)
+                .padding(horizontal = if (featured) 10.dp else 8.dp, vertical = if (featured) 7.dp else 5.dp),
+        )
+        if (plate.until.isNotBlank()) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (useShort) plate.untilShort else plate.until,
+                color = Color.White,
+                fontSize = size,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                softWrap = false,
+                textAlign = TextAlign.End,
+                onTextLayout = { if (it.hasVisualOverflow && !useShort) useShort = true },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
