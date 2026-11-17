@@ -213,8 +213,10 @@ class DomainRulesTest {
         assertEquals("5 ДНЕЙ", plate.daysLine)
         assertEquals("ЧЁРНАЯ ПЯТНИЦА", plate.mark)
         assertEquals("ДО 30 НОЯБРЯ", plate.until)
-        assertEquals("Зима", plate.season)
+        assertEquals("ДО 30.11", plate.untilShort)
         assertEquals("", SalePlate.untilLine(null))
+        assertEquals("ДО 01.01", SalePlate.untilShortLine("2026-01-01"))
+        assertEquals("", SalePlate.untilShortLine(null))
     }
 
     @Test
