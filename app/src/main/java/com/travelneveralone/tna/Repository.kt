@@ -984,6 +984,25 @@ class TnaRepository(
         json.parseToJsonElement(raw).arrayOrEmpty().firstOrNull()?.jsonObjectOrNull()?.str("avatar_url")
     }.getOrNull()
 
+    /// Login numbers through the login-phones edge function (TNACloud 0153).
+    /// Refusals come back with a ready Russian sentence and are shown as is.
+    val loginPhones: LoginPhonesBackend = object : LoginPhonesBackend {
+        override suspend fun list(): List<LoginPhone>? =
+            LoginPhonesWire.list(api.functionBody("login-phones", buildJsonObject { put("action", "list") }.toString()))
+
+        override suspend fun sendCode(phone: String): LoginPhoneOutcome = call("send") { put("phone", phone) }
+
+        override suspend fun confirm(code: String): LoginPhoneOutcome = call("confirm") { put("code", code) }
+
+        override suspend fun remove(phone: String): LoginPhoneOutcome = call("remove") { put("phone", phone) }
+
+        private suspend fun call(action: String, fill: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): LoginPhoneOutcome =
+            LoginPhonesWire.outcome(api.functionBody("login-phones", buildJsonObject {
+                put("action", action)
+                fill()
+            }.toString()))
+    }
+
     /// Email is verified by a code (verify-email edge function), never saved directly.
     suspend fun requestEmailCode(email: String): EmailVerifyResult = verifyEmail(buildJsonObject {
         put("action", "request")

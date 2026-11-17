@@ -150,6 +150,22 @@ class Postgrest(
     suspend fun function(name: String, body: String): String =
         call("POST", "functions/v1/$name", emptyList(), body, null)
 
+    /// Edge function call that hands back the body whatever the status: some
+    /// functions explain a refusal in it (login-phones). null = no answer at all.
+    suspend fun functionBody(name: String, body: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val jwt = token()
+            val request = Request.Builder()
+                .url(baseUrl.trimEnd('/') + "/functions/v1/$name")
+                .header("apikey", anonKey)
+                .header("Authorization", "Bearer ${jwt ?: anonKey}")
+                .header("Accept", "application/json")
+                .post(body.toRequestBody(jsonMedia))
+                .build()
+            http.newCall(request).execute().use { response -> response.body?.string().orEmpty() }
+        }.getOrNull()
+    }
+
     suspend fun upload(bucket: String, path: String, bytes: ByteArray, contentType: String): String =
         withContext(Dispatchers.IO) {
             val url = baseUrl.trimEnd('/') + "/storage/v1/object/$bucket/$path"
@@ -374,8 +390,17 @@ class AuthSession(
     }
 
     suspend fun requestCode(phone: String) = withContext(Dispatchers.IO) {
-        token()
+        val jwt = token()
         val digits = PhoneNumber.digits(phone)
+        // An account can have several numbers. If this one is a second number of
+        // an existing account, the server makes it that account's primary first,
+        // so the sign-in below lands there instead of creating a new account.
+        // Best-effort: a failure here must not stop the code from going out.
+        if (jwt != null) {
+            runCatching {
+                exchange("/functions/v1/login-phones", """{"action":"resolve","phone":"+$digits"}""", bearer = jwt)
+            }
+        }
         val body = """{"phone":"$digits"}"""
         val (code, text) = exchange("/auth/v1/otp", body, bearer = null)
         if (code !in 200..299) {

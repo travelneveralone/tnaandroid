@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -519,6 +520,12 @@ private fun SettingsList(app: AppModel, onIssue: () -> Unit) {
             ProfileToggleRow(app.appLock.kind.icon, "Вход по $lockTitle", app.appLock.isEnabled) { on ->
                 lockScope.launch { app.appLock.setEnabled(on) }
             }
+        }
+        // Several phones per person: any of them signs into this account.
+        // Everyone signs in by phone, staff included.
+        if (registered) {
+            ProfileDivider()
+            ProfileRow(Icons.Filled.Smartphone, "Номера для входа") { app.sheet = Sheet.LoginPhones }
         }
         if (registered && app.role.canBookAndEarn) {
             ProfileDivider()

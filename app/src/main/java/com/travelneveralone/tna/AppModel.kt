@@ -33,6 +33,7 @@ sealed interface Sheet {
     data object Individual : Sheet
     data object Certificate : Sheet
     data object Notifications : Sheet
+    data object LoginPhones : Sheet
     data object Companions : Sheet
     data object Countries : Sheet
     data object Compass : Sheet
@@ -55,6 +56,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         online = { network.isOnline },
     )
     val repo = TnaRepository(api, auth)
+    /// Numbers the account can sign in with (several per person, TNACloud 0153).
+    val loginPhones: LoginPhonesBackend = if (AppConfig.useMock) MockLoginPhones() else repo.loginPhones
     /// Optional biometric lock over the signed-in session (iOS `AppLock`).
     val biometrics = AndroidBiometrics(app)
     val appLock = AppLock(PrefsFlagStore(app, "tna.lock"), biometrics, isRegistered = { account.isRegistered })

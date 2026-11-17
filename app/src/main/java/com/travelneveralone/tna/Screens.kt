@@ -318,7 +318,7 @@ fun SheetHost(app: AppModel, sheet: Sheet, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // iOS uses the darker cream for request forms and feeds, the page cream elsewhere.
     val container = when (sheet) {
-        is Sheet.Booking, Sheet.News, Sheet.Schedule, Sheet.About, Sheet.Notifications -> TnaColor.elevated
+        is Sheet.Booking, Sheet.News, Sheet.Schedule, Sheet.About, Sheet.Notifications, Sheet.LoginPhones -> TnaColor.elevated
         else -> TnaColor.bg
     }
     ModalBottomSheet(
@@ -341,6 +341,7 @@ fun SheetHost(app: AppModel, sheet: Sheet, onDismiss: () -> Unit) {
                 Sheet.Certificate -> CertificateSheet(app)
                 Sheet.EditProfile -> EditProfileSheet(app)
                 Sheet.Notifications -> NotificationsSheet(app)
+                Sheet.LoginPhones -> LoginPhonesSheet(app)
                 Sheet.Companions -> CompanionsSheet(app)
                 Sheet.Countries -> CountriesSheet(app)
                 Sheet.Compass -> CompassSheet(app)
