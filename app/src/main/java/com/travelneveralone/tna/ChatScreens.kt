@@ -250,7 +250,7 @@ fun ThreadRow(thread: ChatThread, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (thread.time.isNotBlank()) Text(thread.time, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            // The list shows only "there is something new" — a dot, not a count.
+            // The list shows only "there is something new" - a dot, not a count.
             if (thread.unread > 0) Box(Modifier.size(11.dp).clip(CircleShape).background(TnaColor.accent))
         }
     }
@@ -316,7 +316,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     val recorder = remember { VoiceRecorder(context) }
     var recording by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) recording = recorder.start() else app.chatNotice = "Доступ к микрофону запрещён — включается в настройках Android."
+        if (granted) recording = recorder.start() else app.chatNotice = "Доступ к микрофону запрещён - включается в настройках Android."
     }
     var attachMenu by remember { mutableStateOf(false) }
     var composingPoll by remember { mutableStateOf(false) }
@@ -360,7 +360,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
             )
         }
         if (!app.network.isOnline) {
-            Text("Нет сети — сообщения отправятся автоматически", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            Text("Нет сети - сообщения отправятся автоматически", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().background(TnaColor.accent).padding(vertical = 6.dp))
         }
@@ -556,9 +556,9 @@ private fun EmptyChatState(thread: ChatThread) {
     }
     val title = if (thread.kind == ChatThreadKind.Trip) "В чате заезда пока тихо" else "Сообщений пока нет"
     val hint = when (thread.kind) {
-        ChatThreadKind.Support -> "Спроси о туре, датах или брони — ответим в рабочее время"
-        ChatThreadKind.Trip -> "Напиши первым — здесь вся группа и гид"
-        ChatThreadKind.Direct -> "Напиши первым — эту переписку больше никто не видит"
+        ChatThreadKind.Support -> "Спроси о туре, датах или брони - ответим в рабочее время"
+        ChatThreadKind.Trip -> "Напиши первым - здесь вся группа и гид"
+        ChatThreadKind.Direct -> "Напиши первым - эту переписку больше никто не видит"
         ChatThreadKind.Community -> "Напиши первым"
     }
     val tint = thread.colors.map { Color.hex(it) }.let { if (it.size >= 2) it else listOf(TnaColor.accent, TnaColor.accent) }

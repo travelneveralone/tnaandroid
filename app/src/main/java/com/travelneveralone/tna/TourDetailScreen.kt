@@ -149,7 +149,7 @@ class TourDetailModel(private val repo: TnaRepository, val tour: Tour) {
     suspend fun toggleSubscription(online: Boolean) {
         if (subscribing) return
         if (!online) {
-            subscribeError = "Нет сети — действие доступно со связью"
+            subscribeError = "Нет сети - действие доступно со связью"
             return
         }
         val target = !subscribed
@@ -157,7 +157,7 @@ class TourDetailModel(private val repo: TnaRepository, val tour: Tour) {
         subscribeError = null
         runCatching { repo.setSubscription(tourKey, target) }
             .onSuccess { subscribed = target }
-            .onFailure { subscribeError = "Не получилось — можно повторить" }
+            .onFailure { subscribeError = "Не получилось - можно повторить" }
         subscribing = false
     }
 
@@ -431,7 +431,7 @@ private fun DeparturesSection(
             ) {
                 Text("Собираем новые заезды", color = TnaColor.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    if (canBook) "Соберём этот тур под твои даты — или напишем, как только откроем новый заезд."
+                    if (canBook) "Соберём этот тур под твои даты - или напишем, как только откроем новый заезд."
                     else "Заезды по этому туру пока не открыты.",
                     color = TnaColor.subtle,
                     fontSize = 14.sp,
@@ -564,7 +564,7 @@ private fun ReviewsSection(model: TourDetailModel, onWrite: () -> Unit) {
             when (model.reviewsState) {
                 TourDetailModel.Reviews.Loading -> repeat(2) { SkeletonBlock(Modifier.fillMaxWidth().height(92.dp), corner = 20) }
                 TourDetailModel.Reviews.Failed -> ReviewsPlaceholder("Не удалось загрузить отзывы")
-                TourDetailModel.Reviews.Empty -> ReviewsPlaceholder(if (model.canReview) "Пока нет отзывов — будь первым!" else "Пока нет отзывов")
+                TourDetailModel.Reviews.Empty -> ReviewsPlaceholder(if (model.canReview) "Пока нет отзывов - будь первым!" else "Пока нет отзывов")
                 TourDetailModel.Reviews.Loaded -> model.reviews.forEach { ReviewCard(it) }
             }
             if (model.canReview) {
@@ -761,7 +761,7 @@ fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
                         }
                     }
                 }
-                if (failed) Text("Не удалось отправить — можно повторить.", color = TnaColor.danger, fontSize = 13.sp)
+                if (failed) Text("Не удалось отправить - можно повторить.", color = TnaColor.danger, fontSize = 13.sp)
                 PrimaryButton(
                     if (model.submittingReview) "Отправляю…" else "Отправить",
                     enabled = text.isNotBlank() && !model.submittingReview,

@@ -352,7 +352,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // MARK: chat extras (polls, pins, attachments) — iOS ChatViewModel parity
+    // MARK: chat extras (polls, pins, attachments) - iOS ChatViewModel parity
 
     var pollStates by mutableStateOf<Map<UUID, PollState>>(emptyMap())
     var pinned by mutableStateOf<List<Message>>(emptyList())
@@ -397,7 +397,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun reportMessage(message: Message) = viewModelScope.launch {
         repo.reportMessage(message.id)
-        chatNotice = "Жалоба отправлена. Спасибо — мы проверим."
+        chatNotice = "Жалоба отправлена. Спасибо - мы проверим."
     }
 
     fun blockAuthor(message: Message) = viewModelScope.launch {
@@ -596,7 +596,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             .onFailure {
                 bookingsState = when {
                     bookings.isNotEmpty() -> "loaded"
-                    !network.isOnline -> "Нет сети — брони появятся при подключении"
+                    !network.isOnline -> "Нет сети - брони появятся при подключении"
                     else -> "Не удалось загрузить. Потяни, чтобы обновить"
                 }
             }
@@ -673,7 +673,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (saved) profile = draft
         return when {
             nameError != null -> "Имя не сохранилось: ${nameError.message ?: "нет связи"}"
-            !saved -> "Не удалось сохранить — нет связи"
+            !saved -> "Не удалось сохранить - нет связи"
             else -> null
         }
     }
@@ -696,7 +696,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val url = repo.uploadAvatar(bytes)
             when {
-                url == null -> avatarError = "Фото не загрузилось — нет связи"
+                url == null -> avatarError = "Фото не загрузилось - нет связи"
                 !repo.setAvatarUrl(url) -> avatarError = "Фото загрузилось, но не прописалось в профиль"
                 else -> avatarUrl = url
             }
@@ -903,7 +903,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         deleteError = null
         runCatching { auth.deleteAccount() }
             .onSuccess { signOut() }
-            .onFailure { deleteError = "Не удалось удалить — можно повторить позже." }
+            .onFailure { deleteError = "Не удалось удалить - можно повторить позже." }
         deleting = false
     }
 

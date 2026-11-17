@@ -271,7 +271,7 @@ fun MiniProfileSheet(app: AppModel, profile: MiniProfile) {
                 if (loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).size(24.dp), color = TnaColor.accent, strokeWidth = 2.dp)
                 if (p != null && !p.hasTravelStats && p.achievements.isEmpty() && p.stamps.isEmpty() && p.departuresLed == null) {
                     Text(
-                        "Поездок с TNA пока нет — но карта стран уже рассказывает, где человек был.",
+                        "Поездок с TNA пока нет - но карта стран уже рассказывает, где человек был.",
                         color = TnaColor.subtle,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
@@ -553,7 +553,7 @@ fun TripModeScreen(app: AppModel) {
                             }
                             if (index < plan.contacts.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.2f)))
                         }
-                        Text("Работает без интернета — сохранено на устройстве", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Работает без интернета - сохранено на устройстве", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

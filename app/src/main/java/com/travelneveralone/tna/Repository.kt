@@ -669,7 +669,7 @@ class TnaRepository(
             val mine = row.bool("is_me") == true
             LeaderboardEntry(
                 rank = row.int("rank") ?: 0,
-                name = PassportCopy.shortName(row.str("name") ?: "—", mine),
+                name = PassportCopy.shortName(row.str("name") ?: "-", mine),
                 km = km,
                 tours = row.int("tours") ?: 0,
                 isMe = mine,
@@ -1265,7 +1265,7 @@ object CompanionFormat {
         if (list.isEmpty()) return ""
         val header = "👥 Кто едет (${list.size})"
         val blocks = list.mapIndexed { i, c -> block(i + 1, c) }
-        return (listOf(header) + blocks).joinToString("\n————————\n")
+        return (listOf(header) + blocks).joinToString("\n--------\n")
     }
 
     /// One person: name, then ДР → тел → гражданство → документ → выдан / кем / прописка → до.

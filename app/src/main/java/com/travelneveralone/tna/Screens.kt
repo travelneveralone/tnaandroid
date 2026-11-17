@@ -220,7 +220,7 @@ private fun Onboarding(prod: Boolean, onFinish: () -> Unit) {
                 1 -> OnboardingPage(
                     top = { Icon(Icons.Filled.Landscape, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(96.dp)) },
                     line1 = "14+", line2 = "НАПРАВЛЕНИЙ",
-                    caption = "От льда Байкала до драконовых деревьев Сокотры. Всё продумано до мелочей — просто выбери тур.",
+                    caption = "От льда Байкала до драконовых деревьев Сокотры. Всё продумано до мелочей - просто выбери тур.",
                     accent = Color.hex(0xF5C752),
                 )
                 else -> OnboardingPage(

@@ -510,7 +510,7 @@ private fun NoResults() {
         Gap(10)
         Text("Такого тура пока нет", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Но мы можем собрать его под тебя — жми на карточку ниже",
+            "Но мы можем собрать его под тебя - жми на карточку ниже",
             color = TnaColor.subtle,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
@@ -533,7 +533,7 @@ private fun IndividualTourCard(prod: Boolean, onClick: () -> Unit) {
             Text("#путешествуй_по_своим_правилам", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text("ИНДИВИДУАЛЬНЫЙ ТУР", style = displayStyle(28, Color.White))
             Text(
-                "Свой маршрут для себя, компании или корпоратива — выбери место, остальное организуем мы",
+                "Свой маршрут для себя, компании или корпоратива - выбери место, остальное организуем мы",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,

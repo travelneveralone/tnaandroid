@@ -200,7 +200,7 @@ fun CountriesSheet(app: AppModel) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("МОИ СТРАНЫ", style = displayStyle(28))
             Text(
-                "Отмечай, где живёшь, где был и куда хочешь — нажми на страну на карте или в списке. Кнопка в углу карты открывает её на весь экран с зумом.",
+                "Отмечай, где живёшь, где был и куда хочешь - нажми на страну на карте или в списке. Кнопка в углу карты открывает её на весь экран с зумом.",
                 color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium,
             )
         }

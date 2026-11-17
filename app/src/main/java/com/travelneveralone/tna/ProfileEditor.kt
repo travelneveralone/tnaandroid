@@ -506,7 +506,7 @@ fun CompanionsSheet(app: AppModel) {
     }
     SheetColumn(spacing = 16) {
         Text("ПОПУТЧИКИ", style = displayStyle(28))
-        Text("Сохрани данные тех, для кого бронируешь билеты — семьи, детей. Не придётся вводить их каждый раз.", color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text("Сохрани данные тех, для кого бронируешь билеты - семьи, детей. Не придётся вводить их каждый раз.", color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         if (app.companions.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Filled.GroupAdd, null, tint = TnaColor.subtle, modifier = Modifier.size(40.dp))
@@ -661,7 +661,7 @@ fun TicketDataSheet(app: AppModel, onDismiss: () -> Unit, onSend: (List<TravelCo
                 Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Filled.GroupAdd, null, tint = TnaColor.subtle, modifier = Modifier.size(36.dp))
                     Text("Нет сохранённых данных", color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("Добавь попутчика здесь или заполни свой профиль — данные подставятся в следующий раз.", color = TnaColor.subtle, fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Text("Добавь попутчика здесь или заполни свой профиль - данные подставятся в следующий раз.", color = TnaColor.subtle, fontSize = 14.sp, textAlign = TextAlign.Center)
                 }
             }
             entries.forEach { c ->

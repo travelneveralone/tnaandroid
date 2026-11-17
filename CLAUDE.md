@@ -6,8 +6,8 @@ Kotlin + Jetpack Compose клиент Travel Never Alone. Это мобильн�
 
 Любое изменение клиентской фичи делается **в обоих** приложениях в одном заходе:
 
-- `TNAiOS/` — SwiftUI
-- `TNAAndroid/` — этот репозиторий
+- `TNAiOS/` - SwiftUI
+- `TNAAndroid/` - этот репозиторий
 
 Общие контракты не расходятся: доменные правила (роли, сезоны, фильтр каталога, Компас, бонусы, телефон, непрочитанные), имена аналитики, колонки PostgREST и RPC. Мок-каталог зеркалит `MockData.swift` и `seed.sql`.
 
@@ -26,20 +26,20 @@ Kotlin + Jetpack Compose клиент Travel Never Alone. Это мобильн�
 
 Флейворы, как схемы iOS:
 
-- `beta` — `com.travelneveralone.android.beta`, тестовый Supabase
-- `prod` — `com.travelneveralone.android`, боевой Supabase
+- `beta` - `com.travelneveralone.android.beta`, тестовый Supabase
+- `prod` - `com.travelneveralone.android`, боевой Supabase
 
 `AppConfig.useMock` переключает фикстуры и живой бэкенд (по умолчанию живой, как в iOS).
 
 ## Архитектура
 
-MVVM, одна точка сборки зависимостей в `AppModel` (аналог `AppCoordinator` + `AppDependencies`). Экраны не ходят в сеть сами: каталог, чаты, паспорт, брони, роли — через `TnaRepository`. Чистая логика без Android лежит в `Models.kt` и `CatalogLogic.kt` и покрыта `DomainRulesTest`.
+MVVM, одна точка сборки зависимостей в `AppModel` (аналог `AppCoordinator` + `AppDependencies`). Экраны не ходят в сеть сами: каталог, чаты, паспорт, брони, роли - через `TnaRepository`. Чистая логика без Android лежит в `Models.kt` и `CatalogLogic.kt` и покрыта `DomainRulesTest`.
 
 ## UI = порт iOS, файл в файл
 
-Вёрстка повторяет SwiftUI-экраны один в один (те же блоки, порядок, тексты, отступы, цвета). Меняешь экран в `TNAiOS/TNA/Features/...` — правь соответствующий файл здесь:
+Вёрстка повторяет SwiftUI-экраны один в один (те же блоки, порядок, тексты, отступы, цвета). Меняешь экран в `TNAiOS/TNA/Features/...` - правь соответствующий файл здесь:
 
-- `Theme.kt` ← `Core/DesignSystem` (палитра, `displayStyle`, `pressable` вместо `PressableStyle`, `shimmer`, `sfIcon` — SF Symbol из бэкенда → Material-иконка, `TourCover`, `Avatar`, `FireBadge`, `stampBorder`)
+- `Theme.kt` ← `Core/DesignSystem` (палитра, `displayStyle`, `pressable` вместо `PressableStyle`, `shimmer`, `sfIcon` - SF Symbol из бэкенда → Material-иконка, `TourCover`, `Avatar`, `FireBadge`, `stampBorder`)
 - `Screens.kt` ← `App/` (Root, Splash, TabBar, плашка «Офлайн/Нет связи») + `Onboarding`, `SheetHost`
 - `CatalogScreen.kt` ← `Catalog/` (+ `TourCards`), `TourDetailScreen.kt` ← `TourDetail/`, `BookingSheet.kt` ← `Booking/`
 - `PassportScreen.kt` ← `Passport/`, `ChatScreens.kt` + `ChatExtras.kt` ← `Chats/` (опросы, закрепы, голосовые, файлы), `ProfileScreen.kt` ← `Profile/ProfileView`
@@ -47,9 +47,9 @@ MVVM, одна точка сборки зависимостей в `AppModel` (�
 - `ProfileEditor.kt` ← `Profile/EditProfileSheet`, `CitizenshipPicker`, `CompanionsView`, `AvatarCropSheet`
 - `Countries.kt` ← `Countries/` (карта стран: фильтр-легенда, полный экран с зумом, компактный вид в мини-профиле); `WorldMap.kt` - только геометрия
 - `Sheets.kt` ← остальные шторки (Auth, News, MyBookings, Info/*, Notifications, Compass, Schedule, Trip)
-- `Media.kt` — полноэкранный просмотр фото
-- `PhoneField.kt` ← `Core/DesignSystem/PhoneField` (чип страны + номер по маске, выбор страны); `PhoneInput.kt` ← `Core/Services/PhoneInput` + `PhoneCountry` (чистая логика, `PhoneInputTest`); `PhoneCountryData.kt` генерирует `TNAiOS/Scripts/gen-phone-countries.cjs` вместе со Swift-таблицей — руками не править. Страна по умолчанию: SIM → сеть → регион системы (на iOS только регион)
+- `Media.kt` - полноэкранный просмотр фото
+- `PhoneField.kt` ← `Core/DesignSystem/PhoneField` (чип страны + номер по маске, выбор страны); `PhoneInput.kt` ← `Core/Services/PhoneInput` + `PhoneCountry` (чистая логика, `PhoneInputTest`); `PhoneCountryData.kt` генерирует `TNAiOS/Scripts/gen-phone-countries.cjs` вместе со Swift-таблицей - руками не править. Страна по умолчанию: SIM → сеть → регион системы (на iOS только регион)
 
-Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, — только Compose state (`mutableStateOf`), иначе экран не перерисуется.
+Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, - только Compose state (`mutableStateOf`), иначе экран не перерисуется.
 
 Видео на карточках карусели - `LoopingVideo.kt` (← `FeaturedVideoPolicy`, `LoopingVideo`, `TourVideoCache`): качаем только не по мобильной сети, играет одна видимая карточка и только когда каталог сверху.

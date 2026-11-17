@@ -294,11 +294,11 @@ object NameDisplay {
 enum class EmailVerifyResult(val userMessage: String) {
     Ok("Почта подтверждена ✓"),
     WrongCode("Неверный код"),
-    Expired("Код истёк — нужен новый"),
+    Expired("Код истёк - нужен новый"),
     TooManyAttempts("Слишком много попыток"),
     InvalidEmail("Неверный адрес почты"),
     SendFailed("Не удалось отправить письмо"),
-    Error("Что-то пошло не так — можно повторить");
+    Error("Что-то пошло не так - можно повторить");
 
     companion object {
         fun from(ok: Boolean?, error: String?): EmailVerifyResult = when {
@@ -414,7 +414,8 @@ class ParsedBookingNote(note: String) {
             val line = raw.trim()
             if (line.isEmpty() || line.startsWith("👥")) continue
             // Visual rule between people in the chat / amo text.
-            if (line.all { it == '—' || it == '-' }) continue
+            // Old notes in the database still use the long dash: accept both.
+            if (line.all { it == '\u2014' || it == '-' }) continue
             val dot = line.indexOf('.')
             // A companion header looks like "1. Фамилия Имя".
             if (dot > 0 && line.substring(0, dot).all { it.isDigit() }) {

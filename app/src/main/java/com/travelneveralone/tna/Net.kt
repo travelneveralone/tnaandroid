@@ -259,7 +259,7 @@ class Postgrest(
                     if (method == "GET" || url.contains("/rpc/")) {
                         cache.readStale(cacheKey)?.let { return@withContext it }
                     }
-                    throw TnaException("Сервер ответил ${response.code}. Запрос не прошёл — можно повторить")
+                    throw TnaException("Сервер ответил ${response.code}. Запрос не прошёл - можно повторить")
                 }
                 if (method == "GET" || url.contains("/rpc/")) cache.write(cacheKey, text)
                 text
@@ -354,7 +354,7 @@ class AuthSession(
         val body = """{"phone":"$digits"}"""
         val (code, text) = exchange("/auth/v1/otp", body, bearer = null)
         if (code !in 200..299) {
-            throw TnaException(codeRequestMessage(code, text) ?: "Сервер ответил $code. Запрос не прошёл — можно повторить")
+            throw TnaException(codeRequestMessage(code, text) ?: "Сервер ответил $code. Запрос не прошёл - можно повторить")
         }
     }
 
@@ -362,7 +362,7 @@ class AuthSession(
         val digits = PhoneNumber.digits(phone)
         val body = """{"type":"sms","phone":"$digits","token":"$code"}"""
         val (status, text) = exchange("/auth/v1/verify", body, bearer = null)
-        if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл — можно повторить")
+        if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл - можно повторить")
         store(text)
         null
     }
@@ -388,7 +388,7 @@ class AuthSession(
     suspend fun deleteAccount() = withContext(Dispatchers.IO) {
         val jwt = token() ?: throw TnaException("Нет соединения с интернетом")
         val (status, _) = exchange("/functions/v1/delete-account", "{}", bearer = jwt, method = "POST")
-        if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл — можно повторить")
+        if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл - можно повторить")
         signOut()
     }
 
@@ -514,7 +514,7 @@ fun parseInstant(raw: String?): Instant? {
         ?: runCatching { Instant.parse(raw.replace(" ", "T").let { if (it.endsWith("Z") || it.contains("+")) it else it + "Z" }) }.getOrNull()
 }
 
-/** «3 нояб. 2026 г.» — the feed date, like iOS SupabaseDate.displayDate. */
+/** «3 нояб. 2026 г.» - the feed date, like iOS SupabaseDate.displayDate. */
 fun displayDay(raw: String?): String {
     val instant = parseInstant(raw) ?: return ""
     return DateTimeFormatter.ofPattern("d MMM yyyy 'г.'", java.util.Locale("ru"))

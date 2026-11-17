@@ -128,14 +128,14 @@ fun ProfileScreen(app: AppModel) {
             }
         }
         Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("TNA — заботливый проводник в мир путешествий", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("TNA - заботливый проводник в мир путешествий", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             Text("v ${appVersion(context)}", color = TnaColor.subtle.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
         }
     }
     if (logoutAsk) {
         ConfirmDialog(
             title = "Выйти из аккаунта?",
-            text = "Брони и история останутся на сервере — вход по тому же номеру вернёт их.",
+            text = "Брони и история останутся на сервере - вход по тому же номеру вернёт их.",
             confirm = "Выйти",
             onConfirm = { logoutAsk = false; app.signOut() },
             onDismiss = { logoutAsk = false },
@@ -166,7 +166,7 @@ fun ProfileScreen(app: AppModel) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "Выбери, о чём речь, — откроется чат с менеджером, он проверит и поправит. Часть поездок и бонусов перенесена из старой базы, там бывают ошибки.",
+                        "Выбери, о чём речь, - откроется чат с менеджером, он проверит и поправит. Часть поездок и бонусов перенесена из старой базы, там бывают ошибки.",
                         color = TnaColor.subtle,
                         fontSize = 13.sp,
                     )
@@ -284,8 +284,8 @@ private fun ProfileNudge(role: UserRole, onDismiss: () -> Unit, onFill: () -> Un
             Icon(Icons.Filled.Close, "Скрыть", tint = TnaColor.subtle, modifier = Modifier.size(16.dp).pressable(0.9f, onClick = onDismiss))
         }
         Text(
-            if (role == UserRole.Partner || !role.hasTravelProfile) "ФИО, дата рождения и город — базовая информация о тебе для команды TNA."
-            else "Дата рождения, город, почта и документ — чтобы билеты оформлялись за пару касаний.",
+            if (role == UserRole.Partner || !role.hasTravelProfile) "ФИО, дата рождения и город - базовая информация о тебе для команды TNA."
+            else "Дата рождения, город, почта и документ - чтобы билеты оформлялись за пару касаний.",
             color = TnaColor.subtle,
             fontSize = 13.sp,
         )
@@ -453,7 +453,7 @@ private fun PromoCard(app: AppModel) {
                         Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(TnaColor.accentBrush).pressable(0.97f) {
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Присоединяйся к TNA. По коду $code — 6 000 ₽ на первую поездку.")
+                                putExtra(Intent.EXTRA_TEXT, "Присоединяйся к TNA. По коду $code - 6 000 ₽ на первую поездку.")
                             }
                             context.startActivity(Intent.createChooser(send, null))
                         },

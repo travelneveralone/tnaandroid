@@ -435,9 +435,9 @@ private fun BookingDetail(booking: BookingSummary, onBack: () -> Unit) {
 @Composable
 fun TermsSheet() {
     val steps = listOf(
-        Triple(Icons.Filled.TouchApp, "Заявка", "Выбор путешествия и контактные данные — дальше менеджер связывается в рабочее время."),
+        Triple(Icons.Filled.TouchApp, "Заявка", "Выбор путешествия и контактные данные - дальше менеджер связывается в рабочее время."),
         Triple(Icons.Filled.Description, "Всё официально", "Составляем договор и гарантируем, что поездка состоится в соответствии с выбранным маршрутом."),
-        Triple(Icons.Filled.Payments, "Предоплата", "Всего 20% от стоимости тура при бронировании, 30% — за 50 дней до тура, остальное — в первый день тура."),
+        Triple(Icons.Filled.Payments, "Предоплата", "Всего 20% от стоимости тура при бронировании, 30% - за 50 дней до тура, остальное - в первый день тура."),
         Triple(Icons.AutoMirrored.Filled.Chat, "Чат участников", "Добавим в чат с другими участниками, поделимся важной информацией и будем ждать встречи."),
     )
     SheetColumn(spacing = 20) {
@@ -479,7 +479,7 @@ fun ReviewsSheet(app: AppModel) {
             Text("О ПУТЕШЕСТВИЯХ С НАМИ", style = displayBrushStyle(20))
         }
         if (app.reviews.isEmpty()) {
-            EmptyState(Icons.Filled.StarRate, "Пока нет отзывов", "Будь первым — расскажи о своей поездке после возвращения.")
+            EmptyState(Icons.Filled.StarRate, "Пока нет отзывов", "Будь первым - расскажи о своей поездке после возвращения.")
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { app.reviews.forEach { ReviewCard(it, showTour = true) } }
         }
@@ -527,7 +527,7 @@ fun ContactsSheet(app: AppModel) {
                 }
             }
         }
-        Text("TNA — заботливый проводник в мир путешествий", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        Text("TNA - заботливый проводник в мир путешествий", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
     }
 }
 
@@ -536,7 +536,7 @@ fun AboutSheet(app: AppModel) {
     SheetColumn(spacing = 22) {
         Text("О НАС", style = displayStyle(30))
         Text(
-            "Travel Never Alone — авторские туры от Ани и команды. Мы возим небольшими группами в места силы: Камчатка, Байкал, Кольский, Сокотра и не только. Наш принцип — «путешествуй не один»: с нами уезжают в одиночку, а возвращаются со своими людьми.",
+            "Travel Never Alone - авторские туры от Ани и команды. Мы возим небольшими группами в места силы: Камчатка, Байкал, Кольский, Сокотра и не только. Наш принцип - «путешествуй не один»: с нами уезжают в одиночку, а возвращаются со своими людьми.",
             color = TnaColor.subtle,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
@@ -639,7 +639,7 @@ fun IndividualSheet(app: AppModel) {
     }
     SheetColumn {
         TwoLineTitle("ИНДИВИДУАЛЬНЫЙ", "ТУР", 32, 32)
-        Text("Выбери место, а всё остальное организуем мы. Маршрут под твои интересы — для себя, своей компании или корпоратива.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text("Выбери место, а всё остальное организуем мы. Маршрут под твои интересы - для себя, своей компании или корпоратива.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             BookingField("Куда хочешь?", form.destination) { form.destination = it }
             CustomDatesBox(
@@ -648,7 +648,7 @@ fun IndividualSheet(app: AppModel) {
                 start = form.startDate,
                 end = form.endDate,
                 onRange = { s, e -> form.startDate = s; form.endDate = e },
-                unknownNote = "Ничего страшного — подберём даты вместе, когда обсудим маршрут.",
+                unknownNote = "Ничего страшного - подберём даты вместе, когда обсудим маршрут.",
             )
             PeopleStepper(form.peopleCount, 1..30, null) { form.peopleCount = it }
             BookingField("Имя", form.name) { form.name = it }
@@ -752,7 +752,7 @@ fun CertificateSheet(app: AppModel) {
         "awaiting" -> Column(Modifier.fillMaxWidth().padding(24.dp).padding(top = 30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
             CircularProgressIndicator(color = TnaColor.accent)
             Text("ЖДЁМ ОПЛАТУ", style = displayStyle(30))
-            Text("Страница оплаты открылась в браузере. Вернись в приложение после оплаты — сертификат активируется сам.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+            Text("Страница оплаты открылась в браузере. Вернись в приложение после оплаты - сертификат активируется сам.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
             Gap(20)
             PrimaryButton(if (state.checking) "Проверяем…" else "Я оплатил(а)", enabled = !state.checking, icon = Icons.Filled.CheckCircle) { check() }
             Text("Открыть страницу оплаты ещё раз", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
@@ -772,7 +772,7 @@ fun CertificateSheet(app: AppModel) {
         }
         else -> SheetColumn {
             TwoLineTitle("ПОДАРОЧНЫЙ", "СЕРТИФИКАТ 🎁", 32, 32)
-            Text("Электронный сертификат с уникальным номером и PIN-кодом. Оплати онлайн — и сразу получишь карточку, которую можно отправить получателю. Действует 1 год.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("Электронный сертификат с уникальным номером и PIN-кодом. Оплати онлайн - и сразу получишь карточку, которую можно отправить получателю. Действует 1 год.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Номинал", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(TnaColor.surface).border(1.dp, TnaColor.stroke, RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -808,10 +808,10 @@ fun CertificateSheet(app: AppModel) {
                     }.getOrNull()
                     state.submitting = false
                     when {
-                        cert == null -> state.error = "Не получилось оформить — можно повторить"
+                        cert == null -> state.error = "Не получилось оформить - можно повторить"
                         cert.status == "paid" -> { state.certificate = cert; state.stage = "done" }
                         cert.paymentUrl != null -> { state.certificate = cert; state.stage = "awaiting"; open(cert.paymentUrl) }
-                        else -> state.error = "Оплата не открылась — можно повторить"
+                        else -> state.error = "Оплата не открылась - можно повторить"
                     }
                     state.mine = app.repo.myCertificates()
                 }
@@ -826,7 +826,7 @@ fun CertificateSheet(app: AppModel) {
                         Icon(Icons.Filled.CardGiftcard, null, tint = TnaColor.accent, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(cert.code ?: "—", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text(cert.code ?: "-", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             Text(listOfNotNull(cert.amountText, cert.statusTitle, cert.expiresText).joinToString(" · "), color = TnaColor.subtle, fontSize = 12.sp)
                         }
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
@@ -866,11 +866,11 @@ private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
         Row {
             Column(Modifier.weight(1f)) {
                 Text("Номер", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(cert.code ?: "—", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                Text(cert.code ?: "-", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
             Column {
                 Text("PIN", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(cert.pin.ifBlank { "—" }, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                Text(cert.pin.ifBlank { "-" }, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
         Text(listOfNotNull(cert.statusTitle, cert.expiresText).joinToString(" · "), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
@@ -931,7 +931,7 @@ fun NotificationsSheet(app: AppModel) {
                 app.savePrefs(p.copy(analytics = it))
             }
         }
-        Text("Мы не собираем переписку, телефон, имя и точное местоположение — только то, как работает само приложение. Выключишь — перестанем.", color = TnaColor.subtle, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
+        Text("Мы не собираем переписку, телефон, имя и точное местоположение - только то, как работает само приложение. Выключишь - перестанем.", color = TnaColor.subtle, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }
 
@@ -1179,7 +1179,7 @@ fun ProgramSheet(app: AppModel, tour: Tour, trip: Trip? = null) {
                     }
                     if (index < contacts.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.2f)))
                 }
-                Text("Работает без интернета — сохранено на устройстве", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Работает без интернета - сохранено на устройстве", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         SectionTitle("Программа заезда", "#день_за_днём")

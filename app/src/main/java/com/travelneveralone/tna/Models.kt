@@ -342,8 +342,8 @@ data class PassportData(
 /// Completed-tour ladder. Copy matches the iOS passport; the server only returns counts.
 enum class TravelerLevel(val title: String, val threshold: Int, val nextHint: String) {
     Novice("Новичок", 0, "Съезди в первый тур, чтобы стать «Путешественником»"),
-    Traveler("Путешественник", 1, "Ещё пара туров — и ты «Первопроходец»"),
-    Pioneer("Первопроходец", 3, "7 туров с TNA открывают уровень «Легенда TNA» — скидка и ранний доступ к новинкам"),
+    Traveler("Путешественник", 1, "Ещё пара туров - и ты «Первопроходец»"),
+    Pioneer("Первопроходец", 3, "7 туров с TNA открывают уровень «Легенда TNA» - скидка и ранний доступ к новинкам"),
     Legend("Легенда TNA", 7, "Высший уровень достигнут. Спасибо, что с TNA!");
 
     fun progress(tours: Int): Double {
@@ -604,8 +604,8 @@ enum class ReferralResult(val userMessage: String) {
     NotFound("Такого кода нет"),
     OwnCode("Свой собственный код вводить нельзя"),
     Unauthorized("Код принимается только после входа в аккаунт"),
-    Existing("Код друга — для первой поездки с TNA, а ты уже ездил с нами. Убери код, и заявка уйдёт"),
-    Error("Не получилось — можно повторить");
+    Existing("Код друга - для первой поездки с TNA, а ты уже ездил с нами. Убери код, и заявка уйдёт"),
+    Error("Не получилось - можно повторить");
 
     companion object {
         fun fromRaw(raw: String?): ReferralResult = when (raw) {
@@ -637,7 +637,7 @@ enum class CertificateCheck {
             Expired -> "Срок действия сертификата истёк"
             Cancelled -> "Сертификат отменён"
             PendingPayment -> "Сертификат ещё не оплачен"
-            Error -> "Не удалось проверить — можно повторить"
+            Error -> "Не удалось проверить - можно повторить"
         }
 }
 

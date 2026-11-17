@@ -463,7 +463,7 @@ private fun LeaderboardSection(rows: List<LeaderboardEntry>, onOpen: (Leaderboar
         SectionTitle("Рейтинг", "#кто_дальше_уехал")
         if (rows.isEmpty()) {
             Text(
-                "Рейтинг пока пуст. Съезди в тур — и попадёшь в таблицу первым!",
+                "Рейтинг пока пуст. Съезди в тур - и попадёшь в таблицу первым!",
                 color = TnaColor.subtle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,

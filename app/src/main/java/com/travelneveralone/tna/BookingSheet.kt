@@ -130,7 +130,7 @@ fun BookingSheet(app: AppModel) {
                 Icon(if (form.isWaitlist) Icons.Filled.NotificationsActive else Icons.Filled.Schedule, null, tint = TnaColor.accent, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    if (form.isWaitlist) "Мест сейчас нет. Встанешь в лист — напишем, как только освободится место."
+                    if (form.isWaitlist) "Мест сейчас нет. Встанешь в лист - напишем, как только освободится место."
                     else "Менеджер напишет в рабочее время и расскажет всё о туре",
                     color = TnaColor.subtle,
                     fontSize = 13.sp,
@@ -280,7 +280,7 @@ private fun CompanionsRow(app: AppModel, form: BookingForm) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("Кто едет", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text(form.companionSummary, color = if (form.companions.isEmpty()) TnaColor.subtle else TnaColor.accent, fontSize = 12.sp, maxLines = 1)
-                Text("Не обязательно сейчас — можно прислать позже в чате", color = TnaColor.subtle, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                Text("Не обязательно сейчас - можно прислать позже в чате", color = TnaColor.subtle, fontSize = 11.sp, fontWeight = FontWeight.Medium)
             }
             Icon(if (picking) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
         }
@@ -340,7 +340,7 @@ fun CustomDatesBox(
     end: LocalDate?,
     onRange: (LocalDate?, LocalDate?) -> Unit,
     tourDays: Int = 0,
-    unknownNote: String = "Ничего страшного — подберём даты вместе в чате после заявки.",
+    unknownNote: String = "Ничего страшного - подберём даты вместе в чате после заявки.",
 ) {
     val shape = RoundedCornerShape(14.dp)
     Column(
@@ -388,7 +388,7 @@ fun RangeCalendar(start: LocalDate?, end: LocalDate?, tourDays: Int, onRange: (L
             Icon(Icons.Filled.ExpandMore, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp).rotate(chevron))
         }
         val hint = when {
-            start == null -> if (tourDays > 0) "Тур занимает $tourDays ${pluralRU(tourDays, "день", "дня", "дней")} — отметь начало и конец" else "Отметь день начала и день окончания"
+            start == null -> if (tourDays > 0) "Тур занимает $tourDays ${pluralRU(tourDays, "день", "дня", "дней")} - отметь начало и конец" else "Отметь день начала и день окончания"
             end == null -> "Теперь отметь день окончания"
             else -> null
         }

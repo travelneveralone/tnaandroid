@@ -335,7 +335,7 @@ fun PollComposerSheet(onDismiss: () -> Unit, onSend: (PollData) -> Unit) {
     }
 }
 
-/// Deadline as quick steps (+1 h / +1 day) — no platform date-picker dialog needed.
+/// Deadline as quick steps (+1 h / +1 day) - no platform date-picker dialog needed.
 @Composable
 private fun DeadlineRow(value: Instant, onChange: (Instant) -> Unit) {
     val local = LocalDateTime.ofInstant(value, ZoneId.systemDefault())
@@ -490,7 +490,7 @@ fun AudioBubble(url: String?, durationMs: Int?, mine: Boolean) {
     }
 }
 
-/// AAC in an MPEG-4 container (.m4a) — the same format iOS records and plays.
+/// AAC in an MPEG-4 container (.m4a) - the same format iOS records and plays.
 class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var file: File? = null

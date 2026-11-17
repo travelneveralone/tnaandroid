@@ -131,9 +131,9 @@ object Mock {
             Stamp(title = "КОЛЬСКИЙ", year = "2026", icon = "sparkles", color = 0x9575CD, angle = 3.0),
         ),
         achievements = listOf(
-            Achievement(name = "Первый шаг", details = "Первый тур с TNA", icon = "walk", earned = true, color = 0x7CB342, howTo = "Съезди в свой первый тур с TNA — и коллекция началась.", earnedDate = "мар 2024"),
+            Achievement(name = "Первый шаг", details = "Первый тур с TNA", icon = "walk", earned = true, color = 0x7CB342, howTo = "Съезди в свой первый тур с TNA - и коллекция началась.", earnedDate = "мар 2024"),
             Achievement(name = "Байкальский лёд", details = "Зимний Байкал", icon = "snow", earned = true, color = 0x53C7F0, howTo = "Пройди по прозрачному льду Байкала в зимнем туре.", earnedDate = "фев 2026"),
-            Achievement(name = "Вулканолог", details = "Подняться на вулкан", icon = "flame", earned = true, color = 0xFF6B3D, howTo = "Поднимись на действующий вулкан — например, на Камчатке.", earnedDate = "авг 2025"),
+            Achievement(name = "Вулканолог", details = "Подняться на вулкан", icon = "flame", earned = true, color = 0xFF6B3D, howTo = "Поднимись на действующий вулкан - например, на Камчатке.", earnedDate = "авг 2025"),
             Achievement(name = "Все сезоны", details = "Тур в каждый сезон", icon = "calendar", earned = false, color = 0x26A69A, howTo = "Съезди в тур зимой, весной, летом и осенью."),
             Achievement(name = "Амбассадор", details = "Привести друга", icon = "people", earned = false, color = 0xFFA726, howTo = "Приведи друга в тур по своему промокоду."),
             Achievement(name = "Легенда TNA", details = "10 туров с TNA", icon = "crown", earned = false, color = 0xFFCA28, howTo = "Соверши 10 туров с TNA и стань легендой."),
@@ -184,7 +184,7 @@ object Mock {
     val managerChat = listOf(
         Message(text = "Привет, Слава! 👋 Видела, ты смотрел Камчатку на август", isMine = false, author = "Аня", time = "13:58"),
         Message(text = "Привет! Да, думаю над заездом 12–22", isMine = true, author = "Слава", time = "14:00"),
-        Message(text = "Отличный выбор! Там сейчас 2 места. Гид — Паша, который водил тебя на Алтае 😉", isMine = false, author = "Аня", time = "14:01"),
+        Message(text = "Отличный выбор! Там сейчас 2 места. Гид - Паша, который водил тебя на Алтае 😉", isMine = false, author = "Аня", time = "14:01"),
         Message(text = "Привет! По Камчатке остались 2 места на август 🌋 Бронировать?", isMine = false, author = "Аня", time = "14:02"),
     )
 
@@ -195,14 +195,14 @@ object Mock {
     )
 
     val reviews = listOf(
-        TourReview(UUID.fromString("00000000-0000-0000-0000-0000000c0001"), "Марина", 5, "Лучшее путешествие в жизни. Гид — космос, всё продумано до мелочей.", "авг 2025"),
-        TourReview(UUID.fromString("00000000-0000-0000-0000-0000000c0002"), "Дмитрий", 5, "Вулканы, океан, медведи — всё как обещали. Обязательно вернусь.", "сен 2025"),
+        TourReview(UUID.fromString("00000000-0000-0000-0000-0000000c0001"), "Марина", 5, "Лучшее путешествие в жизни. Гид - космос, всё продумано до мелочей.", "авг 2025"),
+        TourReview(UUID.fromString("00000000-0000-0000-0000-0000000c0002"), "Дмитрий", 5, "Вулканы, океан, медведи - всё как обещали. Обязательно вернусь.", "сен 2025"),
         TourReview(UUID.fromString("00000000-0000-0000-0000-0000000c0003"), "Ольга", 4, "Насыщенно и красиво. Немного устали от переездов, но оно того стоит.", "июл 2025"),
     )
 
     val news: List<NewsItem> = listOf(
         NewsItem(UUID.fromString("00000000-0000-0000-0000-0000000e0001"), "Открыт набор: Марокко, апрель 2027", "Пустыня, Атлас и синий Шефшауэн. Маленькая группа, ранняя цена до конца месяца.", null, "3 дн", null),
-        NewsItem(UUID.fromString("00000000-0000-0000-0000-0000000d0002"), "Камчатка: набор на август", "Заезд 12–22 августа. Если думал — самое время.", null, "1 нед", NewsLink.TourLink(tours.first().id)),
+        NewsItem(UUID.fromString("00000000-0000-0000-0000-0000000d0002"), "Камчатка: набор на август", "Заезд 12–22 августа. Если думал - самое время.", null, "1 нед", NewsLink.TourLink(tours.first().id)),
         NewsItem(UUID.fromString("00000000-0000-0000-0000-0000000d0003"), "Мы в Telegram", "Живые отчёты из туров и анонсы новых направлений.", null, "2 нед", NewsLink.UrlLink("https://t.me/travelneveralone")),
     )
 

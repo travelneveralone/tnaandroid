@@ -195,8 +195,8 @@ class BookingForm(
     val seatLimitNote: String?
         get() {
             val seats = departure?.spotsLeft ?: return null
-            if (seats <= 0) return "Мест на этот заезд не осталось — оставь заявку, подскажем ближайшие даты"
-            return "На этот заезд осталось $seats ${pluralRU(seats, "место", "места", "мест")} — больше выбрать нельзя"
+            if (seats <= 0) return "Мест на этот заезд не осталось - оставь заявку, подскажем ближайшие даты"
+            return "На этот заезд осталось $seats ${pluralRU(seats, "место", "места", "мест")} - больше выбрать нельзя"
         }
 
     val departureText: String
