@@ -103,6 +103,30 @@ class AppLockTest {
         assertFalse(lock(flags).isEnabled)
     }
 
+    // Sign-in after a sign-out
+
+    @Test fun quickSignInTurnsTheLockBackOnWithOnePrompt() = runBlocking {
+        val flags = MapFlags()
+        val bio = MockBiometrics()
+        val l = lock(flags, bio)
+        assertTrue(l.confirmQuickSignIn())
+        l.restoreAfterQuickSignIn()
+        assertEquals(1, bio.prompts)          // no second prompt for the lock
+        assertTrue(l.isEnabled)
+        assertFalse(l.isLocked)               // the app stays open
+        assertFalse(l.shouldOffer)
+        assertTrue(lock(flags).isEnabled)     // persisted
+    }
+
+    @Test fun quickSignInNeedsBiometrics() = runBlocking {
+        assertFalse(lock(MapFlags(), MockBiometrics(succeeds = false)).confirmQuickSignIn())
+        val none = MockBiometrics(kind = BiometryKind.None)
+        val l = lock(MapFlags(), none)
+        assertFalse(l.canConfirmQuickSignIn)
+        assertFalse(l.confirmQuickSignIn())
+        assertEquals(0, none.prompts)
+    }
+
     @Test fun offeredOncePerAccount() {
         val flags = MapFlags()
         val l = lock(flags)
@@ -110,6 +134,25 @@ class AppLockTest {
         l.markOffered()
         assertFalse(l.shouldOffer)
         assertFalse(lock(flags).shouldOffer)
+    }
+}
+
+/// What refreshing the session a sign-out kept means (iOS AuthSession.quickSignIn).
+class QuickSignInOutcomeTest {
+    @Test fun successSignsIn() {
+        assertEquals(QuickSignInResult.SignedIn, quickSignInOutcome(200))
+    }
+
+    @Test fun rejectedTokenNeedsAnSms() {
+        assertEquals(QuickSignInResult.Expired, quickSignInOutcome(400))
+        assertEquals(QuickSignInResult.Expired, quickSignInOutcome(401))
+    }
+
+    @Test fun flakyServerKeepsTheSessionForARetry() {
+        assertEquals(QuickSignInResult.Offline, quickSignInOutcome(null))   // no network
+        assertEquals(QuickSignInResult.Offline, quickSignInOutcome(408))
+        assertEquals(QuickSignInResult.Offline, quickSignInOutcome(429))
+        assertEquals(QuickSignInResult.Offline, quickSignInOutcome(503))
     }
 }
 

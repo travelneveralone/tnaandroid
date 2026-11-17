@@ -133,11 +133,15 @@ fun ProfileScreen(app: AppModel) {
         }
     }
     if (logoutAsk) {
+        val lockWhat = app.appLock.kind.title
         ConfirmDialog(
             title = "Выйти из аккаунта?",
-            text = "Брони и история останутся на сервере - вход по тому же номеру вернёт их.",
+            // With the biometric lock on the session is kept aside, so coming
+            // back takes a fingerprint and not a paid SMS.
+            text = if (app.appLock.isEnabled && lockWhat != null) "Брони и история останутся на сервере. Вернуться можно по $lockWhat, без кода из SMS."
+            else "Брони и история останутся на сервере - вход по тому же номеру вернёт их.",
             confirm = "Выйти",
-            onConfirm = { logoutAsk = false; app.signOut() },
+            onConfirm = { logoutAsk = false; app.signOut(keepQuickSignIn = app.appLock.isEnabled) },
             onDismiss = { logoutAsk = false },
         )
     }

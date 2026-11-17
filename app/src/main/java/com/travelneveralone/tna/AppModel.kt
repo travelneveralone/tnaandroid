@@ -60,6 +60,19 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val appLock = AppLock(PrefsFlagStore(app, "tna.lock"), biometrics, isRegistered = { account.isRegistered })
     /// One-time «Входить по отпечатку?» after a phone sign-in.
     var lockOfferShown by mutableStateOf(false)
+    /// A sign-out with the biometric lock on left the account on this device:
+    /// the login sheet offers biometrics instead of an SMS code.
+    var canQuickSignIn by mutableStateOf(auth.hasQuickSignIn && !account.isRegistered)
+        private set
+    /// The user chose the phone flow over biometrics on the login sheet.
+    var quickDismissed by mutableStateOf(false)
+        private set
+    /// The login sheet opens on the biometric step while this holds. A phone
+    /// already typed for another number (a booking) goes by SMS instead.
+    val showsQuickSignIn: Boolean
+        get() = canQuickSignIn && !quickDismissed && appLock.canConfirmQuickSignIn &&
+            (loginNational.isEmpty() || account.quickPhone.isEmpty() ||
+                PhoneNumber.digits(loginPhone) == PhoneNumber.digits(account.quickPhone))
     val isProd = BuildConfig.IS_PROD
 
     var showSplash by mutableStateOf(true)
@@ -828,7 +841,60 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         afterLogin = action
         loginError = null
         loginStep = 0
+        quickDismissed = false
         sheet = Sheet.Login
+    }
+
+    /// Biometrics, then the session a sign-out kept comes back. Never sends an
+    /// SMS (iOS `LoginView.quickSignIn`).
+    fun quickSignIn() {
+        if (loginBusy) return
+        loginBusy = true
+        loginError = null
+        viewModelScope.launch {
+            // Cancelled or failed biometrics: stay on the step, the button retries
+            // and the phone flow is right below. No error for a cancel.
+            if (!appLock.confirmQuickSignIn()) {
+                loginBusy = false
+                return@launch
+            }
+            val keptPhone = account.quickPhone
+            when (auth.quickSignIn()) {
+                QuickSignInResult.SignedIn -> {
+                    account.isRegistered = true
+                    account.phone = keptPhone.ifEmpty { auth.currentPhone()?.let { PhoneNumber.pretty(it) }.orEmpty() }
+                    account.quickPhone = ""
+                    canQuickSignIn = false
+                    // The lock was on at sign-out and biometrics have just passed.
+                    appLock.restoreAfterQuickSignIn()
+                    loginStep = 0
+                    loginCode = ""
+                    loadRole()
+                    loadProfileBits()
+                    loadChats()
+                    // No "done" step here: the sheet closes, a pending action takes over.
+                    val pending = afterLogin
+                    afterLogin = null
+                    sheet = null
+                    pending?.invoke()
+                }
+                QuickSignInResult.Offline -> loginError = "Нет связи. Попробуй ещё раз"
+                QuickSignInResult.Expired, QuickSignInResult.Unavailable -> {
+                    // The server dropped that session: one SMS and the account is back.
+                    account.quickPhone = ""
+                    canQuickSignIn = false
+                    if (loginNational.isEmpty() && keptPhone.isNotEmpty()) loginPhone = keptPhone
+                    loginError = "Вход по биометрии больше не действует. Нужен код из SMS"
+                }
+            }
+            loginBusy = false
+        }
+    }
+
+    /// Login sheet: «Войти по другому номеру».
+    fun leaveQuickSignIn() {
+        quickDismissed = true
+        loginError = null
     }
 
     fun requestCode() {
@@ -850,6 +916,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess {
                     account.isRegistered = true
                     account.phone = PhoneNumber.pretty(loginPhone)
+                    // An SMS sign-in replaces whatever an earlier sign-out kept.
+                    account.quickPhone = ""
+                    canQuickSignIn = false
                     loginStep = 0
                     loginCode = ""
                     loadRole()
@@ -875,9 +944,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun signOut() {
+    /// [keepQuickSignIn]: the biometric lock is on. The session is set aside
+    /// (not dropped) so this person comes back with biometrics instead of an
+    /// SMS that costs money. Everything else is wiped all the same.
+    fun signOut(keepQuickSignIn: Boolean = false) {
         blocked = emptySet()
-        auth.signOut()
+        val keptPhone = account.phone
+        auth.signOut(keepForQuickSignIn = keepQuickSignIn && account.isRegistered)
+        canQuickSignIn = auth.hasQuickSignIn
+        account.quickPhone = if (canQuickSignIn) keptPhone else ""
         appLock.reset()
         account.isRegistered = false
         account.name = ""

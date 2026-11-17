@@ -22,6 +22,11 @@ import kotlin.coroutines.resume
 /// for biometrics on a cold launch and after [GRACE_MS] in the background.
 /// Failed biometrics fall back to the device PIN; the lock screen also offers
 /// a fresh phone sign-in, so nobody gets stuck.
+///
+/// The same switch covers sign-out: with the lock on, signing out keeps the
+/// session aside and the login sheet brings it back with biometrics alone
+/// ([AppLock.confirmQuickSignIn] + `AppModel.quickSignIn`), so coming back
+/// never costs an SMS.
 
 enum class BiometryKind {
     None, Fingerprint, Face, Generic;
@@ -44,6 +49,10 @@ interface Biometrics {
     val canAuthenticate: Boolean
     /// Biometrics with the device PIN as fallback. True on success.
     suspend fun authenticate(reason: String): Boolean
+    /// Biometrics only, no PIN fallback. Signing back in after a sign-out
+    /// uses this: knowing the phone's PIN is not enough there, the fallback
+    /// is an SMS code.
+    suspend fun authenticateBiometricsOnly(reason: String): Boolean
 }
 
 /// Persisted flags; SharedPreferences in the app, a map in tests.
@@ -87,7 +96,12 @@ class AndroidBiometrics(context: Context) : Biometrics {
     override val canAuthenticate: Boolean
         get() = manager.canAuthenticate(BIOMETRIC_WEAK or DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
 
-    override suspend fun authenticate(reason: String): Boolean {
+    override suspend fun authenticate(reason: String): Boolean = prompt(reason, allowDeviceCredential = true)
+
+    override suspend fun authenticateBiometricsOnly(reason: String): Boolean =
+        prompt(reason, allowDeviceCredential = false)
+
+    private suspend fun prompt(reason: String, allowDeviceCredential: Boolean): Boolean {
         val host = activity?.get() ?: return false
         return suspendCancellableCoroutine { cont ->
             val prompt = BiometricPrompt(
@@ -104,10 +118,14 @@ class AndroidBiometrics(context: Context) : Biometrics {
                     // onAuthenticationFailed: one bad try, the prompt stays up.
                 },
             )
-            val info = BiometricPrompt.PromptInfo.Builder()
-                .setTitle(reason)
-                .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
-                .build()
+            val builder = BiometricPrompt.PromptInfo.Builder().setTitle(reason)
+            if (allowDeviceCredential) {
+                builder.setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
+            } else {
+                // Without the device credential the prompt must carry its own cancel button.
+                builder.setAllowedAuthenticators(BIOMETRIC_WEAK).setNegativeButtonText("Отмена")
+            }
+            val info = builder.build()
             prompt.authenticate(info)
             cont.invokeOnCancellation { prompt.cancelAuthentication() }
         }
@@ -124,6 +142,11 @@ class MockBiometrics(
         private set
 
     override suspend fun authenticate(reason: String): Boolean {
+        prompts += 1
+        return succeeds
+    }
+
+    override suspend fun authenticateBiometricsOnly(reason: String): Boolean {
         prompts += 1
         return succeeds
     }
@@ -173,6 +196,30 @@ class AppLock(
     val shouldOffer: Boolean get() = isOfferable && !isEnabled && flags.get(OFFERED) == null
 
     fun markOffered() = flags.set(OFFERED, true)
+
+    /// The login sheet offers a biometric sign-in only where the device has biometrics.
+    val canConfirmQuickSignIn: Boolean get() = biometrics.kind.isAvailable
+
+    /// Biometric check in front of `AppModel.quickSignIn`.
+    suspend fun confirmQuickSignIn(): Boolean {
+        if (!canConfirmQuickSignIn || isAuthenticating) return false
+        isAuthenticating = true
+        try {
+            return biometrics.authenticateBiometricsOnly(REASON)
+        } finally {
+            isAuthenticating = false
+        }
+    }
+
+    /// After a biometric sign-in the lock is on again without a second prompt:
+    /// it was on when this person signed out (that is why the session was
+    /// kept) and they have just passed biometrics. The app stays open.
+    fun restoreAfterQuickSignIn() {
+        isEnabled = true
+        isLocked = false
+        flags.set(ENABLED, true)
+        markOffered()
+    }
 
     fun didEnterBackground() {
         backgroundedAt = now()

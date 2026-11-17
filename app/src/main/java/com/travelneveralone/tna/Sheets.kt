@@ -132,6 +132,40 @@ fun LoginSheet(app: AppModel) {
         }
         return
     }
+    // A sign-out with the biometric lock on kept the account: the sheet opens on
+    // a biometric sign-in (no SMS), the phone flow is one tap away (iOS LoginView).
+    val quick = app.loginStep == 0 && app.showsQuickSignIn
+    if (quick) {
+        // The prompt comes up by itself, like in a banking app.
+        LaunchedEffect(Unit) { app.quickSignIn() }
+        SheetColumn(spacing = 20) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("ВХОД", style = displayStyle(34))
+                Text(
+                    if (app.account.quickPhone.isEmpty()) "С возвращением! Код из SMS не понадобится"
+                    else "С возвращением! Аккаунт ${app.account.quickPhone}, код из SMS не понадобится",
+                    color = TnaColor.subtle,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            val what = app.appLock.kind.title ?: "биометрии"
+            PrimaryButton(
+                if (app.loginBusy) "Входим…" else "Войти по $what",
+                enabled = !app.loginBusy,
+                icon = app.appLock.kind.icon,
+            ) { app.quickSignIn() }
+            Text(
+                "Войти по другому номеру",
+                color = TnaColor.accent,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.pressable { if (!app.loginBusy) app.leaveQuickSignIn() },
+            )
+            app.loginError?.let { Text(it, color = TnaColor.danger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+        }
+        return
+    }
     SheetColumn(spacing = 20) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("ВХОД", style = displayStyle(34))

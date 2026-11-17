@@ -299,6 +299,31 @@ fun codeRequestMessage(status: Int, body: String): String? {
     return if (status == 429) TOO_MANY_CODE_ATTEMPTS else null
 }
 
+/// Outcome of a biometric sign-in after a sign-out (iOS `QuickSignInResult`).
+enum class QuickSignInResult {
+    /// The kept session is live again.
+    SignedIn,
+    /// The server no longer accepts the kept session: an SMS code is needed.
+    Expired,
+    /// The server could not be reached; the kept session is still there.
+    Offline,
+    /// Nothing was kept on this device.
+    Unavailable,
+}
+
+/// What refreshing the kept session means. [status] is null when the server
+/// could not be reached. A 4xx is the server refusing the token itself;
+/// 408 and 429 say nothing about the session.
+fun quickSignInOutcome(status: Int?): QuickSignInResult = when {
+    status == null -> QuickSignInResult.Offline
+    status in 200..299 -> QuickSignInResult.SignedIn
+    status in 400..499 && status != 408 && status != 429 -> QuickSignInResult.Expired
+    else -> QuickSignInResult.Offline
+}
+
+/// The refresh token a sign-out left behind for a biometric sign-in (no SMS).
+private const val QUICK_REFRESH = "quick_refresh"
+
 class AuthSession(
     context: Context,
     private val baseUrl: String,
@@ -364,6 +389,8 @@ class AuthSession(
         val (status, text) = exchange("/auth/v1/verify", body, bearer = null)
         if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл - можно повторить")
         store(text)
+        // An SMS sign-in supersedes whatever an earlier sign-out kept.
+        forgetQuickSignIn()
         null
     }
 
@@ -378,11 +405,49 @@ class AuthSession(
         obj.bool("is_anonymous") ?: (obj.str("phone").isNullOrEmpty() && obj.str("email").isNullOrEmpty())
     }
 
-    fun signOut() {
+    /// [keepForQuickSignIn]: the user has the biometric lock on. The session is
+    /// then set aside instead of thrown away, so coming back takes a fingerprint
+    /// and not a paid SMS. Nothing uses it until [quickSignIn].
+    fun signOut(keepForQuickSignIn: Boolean = false) {
+        val kept = if (keepForQuickSignIn) refreshToken else null
         accessToken = null
         refreshToken = null
         userId = null
-        prefs.edit().clear().apply()
+        // An editor applies clear() first, whatever the call order.
+        val edit = prefs.edit().clear()
+        if (kept != null) edit.putString(QUICK_REFRESH, kept)
+        edit.apply()
+    }
+
+    /// Whether a sign-out left a session behind for a biometric sign-in.
+    val hasQuickSignIn: Boolean get() = prefs.contains(QUICK_REFRESH)
+
+    /// Drops the kept session (another number signed in, account deleted).
+    fun forgetQuickSignIn() {
+        prefs.edit().remove(QUICK_REFRESH).apply()
+    }
+
+    /// Brings back the session kept by [signOut]. The caller has already
+    /// checked biometrics. The kept refresh token is exchanged right away: a
+    /// session the server dropped must surface here, as Expired, and not later
+    /// as a silently anonymous user.
+    suspend fun quickSignIn(): QuickSignInResult = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val kept = prefs.getString(QUICK_REFRESH, null) ?: return@withLock QuickSignInResult.Unavailable
+            val reply = runCatching {
+                exchange("/auth/v1/token?grant_type=refresh_token", """{"refresh_token":"$kept"}""", bearer = null)
+            }.getOrNull()
+            val outcome = quickSignInOutcome(reply?.first)
+            when (outcome) {
+                QuickSignInResult.SignedIn -> {
+                    store(reply?.second.orEmpty())
+                    forgetQuickSignIn()
+                }
+                QuickSignInResult.Expired -> forgetQuickSignIn()
+                else -> Unit
+            }
+            outcome
+        }
     }
 
     suspend fun deleteAccount() = withContext(Dispatchers.IO) {
@@ -497,6 +562,12 @@ class AccountStore(context: Context) {
     var avatarPath: String?
         get() = avatarState
         set(value) { avatarState = value; prefs.edit().putString("avatar", value).apply() }
+    /// Phone of the account a sign-out kept for a biometric sign-in; shown on
+    /// the login sheet. Empty when nothing is kept.
+    private var quickPhoneState by mutableStateOf(prefs.getString("quick_phone", "").orEmpty())
+    var quickPhone: String
+        get() = quickPhoneState
+        set(value) { quickPhoneState = value; prefs.edit().putString("quick_phone", value).apply() }
 }
 
 fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
