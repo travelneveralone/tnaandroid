@@ -98,6 +98,8 @@ dependencies {
     implementation(libs.androidx.core)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment)
+    // Maps for chat locations: OpenStreetMap, no Google Play services or API key.
+    implementation(libs.osmdroid)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)
     testImplementation(libs.junit)

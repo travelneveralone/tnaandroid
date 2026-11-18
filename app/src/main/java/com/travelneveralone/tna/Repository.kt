@@ -541,7 +541,7 @@ class TnaRepository(
     suspend fun fetchPinned(chatId: UUID): List<Message> = runCatching {
         val me = auth.currentUserId()?.toString()
         val raw = api.get("messages", listOf(
-            "select" to "id,text,kind,media_url,media_name,duration_ms,edited_at,reply_to,album_id,pinned_at,poll,as_company,created_at,user_id," +
+            "select" to "id,text,kind,media_url,media_name,duration_ms,edited_at,reply_to,album_id,pinned_at,poll,location,as_company,created_at,user_id," +
                 "author:public_profiles!user_id(name,avatar_url),message_reactions(emoji,user_id)",
             "chat_id" to "eq.$chatId",
             "pinned_at" to "not.is.null",
@@ -577,6 +577,43 @@ class TnaRepository(
         }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
         runCatching { api.function("notify-message", buildJsonObject { put("message_id", id.toString()) }.toString()) }
         return id
+    }
+
+    // MARK: location (0158)
+
+    /// Posts a one-off point or a live location (online only, like polls).
+    /// The server stamps updated_at/stopped and caps the live period at 8 h.
+    suspend fun sendLocation(chatId: UUID, location: LocationData): UUID {
+        val id = UUID.randomUUID()
+        api.post("messages", buildJsonObject {
+            put("id", id.toString())
+            put("chat_id", chatId.toString())
+            put("text", LocationText.label(location))
+            put("kind", "location")
+            put("location", buildJsonObject {
+                put("lat", location.lat)
+                put("lng", location.lng)
+                location.accuracy?.let { put("accuracy", it) }
+                location.liveUntil?.let { put("live_until", it.toString()) }
+            })
+        }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
+        runCatching { api.function("notify-message", buildJsonObject { put("message_id", id.toString()) }.toString()) }
+        return id
+    }
+
+    /// Moves a live point. true = accepted, false = the sharing is over on the
+    /// server (stop tracking), null = no answer (keep sharing, retry next fix).
+    suspend fun updateLiveLocation(messageId: UUID, point: GeoPoint): Boolean? = runCatching {
+        api.rpc("update_live_location", buildJsonObject {
+            put("p_message", messageId.toString())
+            put("p_lat", point.lat)
+            put("p_lng", point.lng)
+            point.accuracy?.let { put("p_accuracy", it) }
+        }.toString()).trim() == "true"
+    }.getOrNull()
+
+    suspend fun stopLiveLocation(messageId: UUID) {
+        runCatching { api.rpc("stop_live_location", buildJsonObject { put("p_message", messageId.toString()) }.toString()) }
     }
 
     suspend fun votePoll(messageId: UUID, options: List<String>): Boolean = runCatching {
@@ -802,7 +839,7 @@ class TnaRepository(
     suspend fun history(chatId: UUID, limit: Int = 50): List<Message> {
         val me = auth.currentUserId()?.toString()
         val raw = api.get("messages", listOf(
-            "select" to "id,text,kind,media_url,media_name,duration_ms,edited_at,reply_to,album_id,pinned_at,poll,as_company,created_at,user_id," +
+            "select" to "id,text,kind,media_url,media_name,duration_ms,edited_at,reply_to,album_id,pinned_at,poll,location,as_company,created_at,user_id," +
                 "author:public_profiles!user_id(name,avatar_url),message_reactions(emoji,user_id)",
             "chat_id" to "eq.$chatId",
             "order" to "created_at.desc",
@@ -900,6 +937,7 @@ class TnaRepository(
                 "file" -> MessageKind.File
                 "audio" -> MessageKind.Audio
                 "poll" -> MessageKind.Poll
+                "location" -> MessageKind.Location
                 else -> MessageKind.Text
             },
             mediaUrl = row.str("media_url"),
@@ -909,6 +947,7 @@ class TnaRepository(
             reactions = reactions(row["message_reactions"]?.arrayOrEmpty(), me),
             createdAt = parseInstant(created) ?: Instant.now(),
             poll = poll(row["poll"]?.jsonObjectOrNull()),
+            location = location(row["location"]?.jsonObjectOrNull()),
             authorId = user?.let(UUID::fromString),
             replyTo = row.str("reply_to")?.let(UUID::fromString),
             albumId = row.str("album_id")?.let(UUID::fromString),
@@ -1219,6 +1258,20 @@ class TnaRepository(
             if (row.str("user_id") == me) mine[emoji] = true
         }
         return order.map { MessageReaction(it, counts[it] ?: 0, mine[it] == true) }
+    }
+
+    private fun location(row: JsonObject?): LocationData? {
+        row ?: return null
+        val lat = row.dbl("lat") ?: return null
+        val lng = row.dbl("lng") ?: return null
+        return LocationData(
+            lat = lat,
+            lng = lng,
+            accuracy = row.dbl("accuracy"),
+            liveUntil = parseInstant(row.str("live_until")),
+            updatedAt = parseInstant(row.str("updated_at")),
+            stopped = row.bool("stopped") == true,
+        )
     }
 
     private fun poll(row: JsonObject?): PollData? {

@@ -56,6 +56,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         online = { network.isOnline },
     )
     val repo = TnaRepository(api, auth)
+
+    init {
+        // Live locations outlive the chat screen (and this model): the hub and
+        // its foreground service talk to the backend through the same repo.
+        LiveLocationHub.repo = repo
+        LiveLocationHub.resume(app)
+    }
     /// Numbers the account can sign in with (several per person, TNACloud 0153).
     val loginPhones: LoginPhonesBackend = if (AppConfig.useMock) MockLoginPhones() else repo.loginPhones
     /// Optional biometric lock over the signed-in session (iOS `AppLock`).
@@ -316,6 +323,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteMessage(message: Message) {
+        // A deleted live location must stop moving too.
+        if (message.kind == MessageKind.Location && LiveLocationHub.isSharing(message.id)) {
+            LiveLocationHub.end(getApplication<Application>(), message.id)
+        }
         val snapshot = messages
         messages = messages.filter { it.id != message.id }
         if (message.status == MessageStatus.Failed) return
@@ -485,6 +496,52 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             val live = resolveThread(thread)
             runCatching { repo.createPoll(live.id, poll) }
                 .onFailure { chatNotice = "Не удалось создать опрос" }
+            reloadOpenChat()
+        }
+    }
+
+    // MARK: location (0158)
+
+    /// True while a location is being fixed and sent (spinner on the sheet).
+    var locationBusy by mutableStateOf(false)
+        private set
+
+    /// Sends my current position: a one-off point (`live == null`) or a live
+    /// location that keeps moving for the period. Online only, like polls.
+    fun sendLocation(live: LivePeriod?) {
+        val thread = openChat ?: return
+        if (!network.isOnline) {
+            chatNotice = "Геопозиция отправляется только онлайн"
+            return
+        }
+        val context = getApplication<Application>()
+        viewModelScope.launch {
+            locationBusy = true
+            val point = DeviceLocation.current(context)
+            if (point == null) {
+                chatNotice = "Не удалось определить геопозицию"
+                locationBusy = false
+                return@launch
+            }
+            val until = live?.let { java.time.Instant.now().plusSeconds(it.seconds) }
+            val chat = resolveThread(thread)
+            runCatching { repo.sendLocation(chat.id, LocationData(point.lat, point.lng, point.accuracy, until)) }
+                .onSuccess { id -> if (until != null) LiveLocationHub.start(context, id, chat.id, until, point) }
+                .onFailure { chatNotice = "Не удалось отправить геопозицию" }
+            reloadOpenChat()
+            locationBusy = false
+        }
+    }
+
+    /// Ends my live location (by message, or the one running in the open chat).
+    fun stopLiveLocation(messageId: UUID? = null) {
+        val id = messageId ?: LiveLocationHub.session(openChat?.id)?.messageId ?: return
+        // Reflect it right away; the next history poll confirms from the server.
+        messages = messages.map { m ->
+            if (m.id == id && m.location != null) m.copy(location = m.location.copy(stopped = true, liveUntil = java.time.Instant.now())) else m
+        }
+        viewModelScope.launch {
+            LiveLocationHub.stop(getApplication<Application>(), id)
             reloadOpenChat()
         }
     }

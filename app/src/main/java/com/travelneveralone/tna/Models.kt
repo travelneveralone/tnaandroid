@@ -407,7 +407,7 @@ data class ProfileDraft(
 }
 
 enum class MessageStatus { Sent, Queued, Failed }
-enum class MessageKind { Text, Image, File, Audio, Poll }
+enum class MessageKind { Text, Image, File, Audio, Poll, Location }
 
 data class PollOption(val id: String, val text: String)
 
@@ -452,6 +452,8 @@ data class Message(
     val albumId: UUID? = null,
     val pinnedAt: Instant? = null,
     val poll: PollData? = null,
+    /// Point of a `kind == Location` message (TNACloud 0158).
+    val location: LocationData? = null,
     val asCompany: Boolean = false,
     val authorAvatarUrl: String? = null,
 )
@@ -874,4 +876,110 @@ enum class DataIssue(val title: String, val prefill: String) {
     Bonuses("Бонусы", "Здравствуйте! Кажется, неверно посчитаны мои бонусы: "),
     Personal("Имя или личные данные", "Здравствуйте! В моих данных в приложении ошибка: "),
     Other("Другое", "Здравствуйте! В приложении неточность: "),
+}
+
+// MARK: - Location in chats (TNACloud 0158, iOS LocationData / LocationText / LiveLocationSharer)
+
+/// A point shared in a chat. A one-off pin has no `liveUntil`; a live location
+/// has it and keeps moving until then (or until its author stops it).
+data class LocationData(
+    val lat: Double,
+    val lng: Double,
+    val accuracy: Double? = null,
+    val liveUntil: Instant? = null,
+    val updatedAt: Instant? = null,
+    val stopped: Boolean = false,
+) {
+    /// Shared as a live location (running or finished).
+    val isLiveKind: Boolean get() = liveUntil != null
+
+    /// Still moving at `now`: live, not stopped, end time ahead.
+    fun isLive(now: Instant = Instant.now()): Boolean =
+        !stopped && liveUntil != null && liveUntil.isAfter(now)
+}
+
+/// One device fix.
+data class GeoPoint(val lat: Double, val lng: Double, val accuracy: Double? = null, val at: Instant = Instant.now()) {
+    /// Great-circle distance in metres (haversine).
+    fun distanceTo(other: GeoPoint): Double {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(other.lat - lat)
+        val dLng = Math.toRadians(other.lng - lng)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat)) * Math.cos(Math.toRadians(other.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    }
+}
+
+/// How long a live location runs (Telegram's set).
+enum class LivePeriod(val seconds: Long, val title: String) {
+    Minutes15(15 * 60, "15 минут"),
+    Hour1(3600, "1 час"),
+    Hours8(8 * 3600, "8 часов"),
+}
+
+/// Texts for the location bubble, the map card and the banner - same as iOS.
+object LocationText {
+    fun label(location: LocationData): String =
+        if (location.isLiveKind) "📍 Трансляция геопозиции" else "📍 Геопозиция"
+
+    fun updated(updatedAt: Instant?, now: Instant = Instant.now()): String? {
+        updatedAt ?: return null
+        val s = maxOf(0L, java.time.Duration.between(updatedAt, now).seconds)
+        if (s < 60) return "обновлено только что"
+        val m = s / 60
+        if (m < 60) return "обновлено $m мин назад"
+        return "обновлено ${m / 60} ч назад"
+    }
+
+    fun remaining(until: Instant, now: Instant = Instant.now()): String {
+        val total = maxOf(0L, java.time.Duration.between(now, until).seconds / 60)
+        val h = total / 60
+        val m = total % 60
+        if (h == 0L) return "ещё ${maxOf(m, 1L)} мин"
+        if (m == 0L) return "ещё $h ч"
+        return "ещё $h ч $m мин"
+    }
+
+    /// Footer title + subtitle at `now`.
+    fun status(location: LocationData, now: Instant = Instant.now()): Pair<String, String?> {
+        val until = location.liveUntil
+        if (location.isLive(now) && until != null) {
+            val bits = listOfNotNull(updated(location.updatedAt, now), remaining(until, now))
+            return "Трансляция геопозиции" to bits.joinToString(" · ")
+        }
+        if (location.isLiveKind) return "Трансляция завершена" to null
+        val accuracy = location.accuracy?.takeIf { it > 0 }?.let { "точность ~${Math.round(it)} м" }
+        return "Геопозиция" to accuracy
+    }
+
+    fun coordinates(location: LocationData): String =
+        String.format(java.util.Locale.US, "%.6f, %.6f", location.lat, location.lng)
+}
+
+/// When a live session sends a fix: never more often than `minInterval`; then
+/// when the person moved `minDistance`, or the `heartbeat` is due.
+object LiveThrottle {
+    const val MIN_INTERVAL_SEC = 10L
+    const val MIN_DISTANCE_M = 30.0
+    const val HEARTBEAT_SEC = 60L
+
+    fun shouldSend(point: GeoPoint, last: GeoPoint?): Boolean {
+        last ?: return true
+        val elapsed = java.time.Duration.between(last.at, point.at).seconds
+        if (elapsed >= HEARTBEAT_SEC) return true
+        if (elapsed < MIN_INTERVAL_SEC) return false
+        return point.distanceTo(last) >= MIN_DISTANCE_M
+    }
+}
+
+/// Markers for the chat map: every location still live (one per author, the
+/// newest) plus the tapped one, if any.
+fun chatMapPoints(messages: List<Message>, focus: Message? = null, now: Instant = Instant.now()): List<Message> {
+    val live = messages.filter { it.kind == MessageKind.Location && it.location?.isLive(now) == true }
+    val all = if (focus != null && live.none { it.id == focus.id }) live + focus else live
+    val seen = mutableSetOf<String>()
+    return all.sortedByDescending { it.createdAt }.filter { m ->
+        if (m.id == focus?.id) true else seen.add(m.authorId?.toString() ?: m.author)
+    }
 }

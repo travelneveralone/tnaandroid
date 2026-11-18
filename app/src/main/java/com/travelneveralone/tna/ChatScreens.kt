@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.runtime.DisposableEffect
@@ -320,6 +321,11 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     }
     var attachMenu by remember { mutableStateOf(false) }
     var composingPoll by remember { mutableStateOf(false) }
+    var sharingLocation by remember { mutableStateOf(false) }
+    // The chat map: opened on a location bubble (focus) or from the live banner (no focus).
+    var mapOpen by remember { mutableStateOf(false) }
+    var mapFocus by remember { mutableStateOf<Message?>(null) }
+    val authorName: (Message) -> String = { ChatNames.author(it, app.participant(it.authorId)) }
     var ticketData by remember { mutableStateOf(false) }
     var pinIndex by remember(thread.id) { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
@@ -411,6 +417,14 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                                     AlbumBubble(group, author, roleTag) { i -> viewer = group.mapNotNull { it.mediaUrl } to i }
                                 } else if (message.kind == MessageKind.Poll && message.poll != null) {
                                     PollBubble(app, message) { menuFor = message.id }
+                                } else if (message.kind == MessageKind.Location && message.location != null) {
+                                    LocationBubble(
+                                        message = message,
+                                        canStop = message.isMine && LiveLocationHub.isSharing(message.id),
+                                        onOpen = { mapFocus = message; mapOpen = true },
+                                        onStop = { app.stopLiveLocation(message.id) },
+                                        onLongPress = { menuFor = message.id },
+                                    )
                                 } else {
                                     MessageBubble(
                                         message = message,
@@ -443,6 +457,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
         if (mentions.isNotEmpty() && !recording) {
             MentionBar(mentions) { app.chatDraft = ChatNames.insertMention(app.chatDraft, it.name) }
         }
+        LiveLocationBanner(app, app.openChat?.id ?: thread.id, authorName) { mapFocus = null; mapOpen = true }
         Box {
             InputBar(
                 app,
@@ -469,6 +484,8 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 if (thread.kind == ChatThreadKind.Trip) {
                     DropdownMenuItem(text = { Text("Опрос") }, leadingIcon = { Icon(Icons.Filled.Poll, null) }, onClick = { attachMenu = false; composingPoll = true })
                 }
+                // Location in any chat: a one-off point or a live location.
+                DropdownMenuItem(text = { Text("Геопозиция") }, leadingIcon = { Icon(Icons.Filled.LocationOn, null) }, onClick = { attachMenu = false; sharingLocation = true })
                 // Passenger data (own profile + companions) goes to the manager - support chat only.
                 if (thread.isSupport && app.account.isRegistered) {
                     DropdownMenuItem(text = { Text("Данные для билета") }, leadingIcon = { Icon(Icons.Filled.Badge, null) }, onClick = {
@@ -493,6 +510,8 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
     viewer?.let { (urls, start) -> ImageViewerDialog(urls, start) { viewer = null } }
     if (app.participantsShown) ParticipantsSheet(app)
     if (composingPoll) PollComposerSheet(onDismiss = { composingPoll = false }) { app.createPoll(it) }
+    if (sharingLocation) LocationShareSheet(app) { sharingLocation = false }
+    if (mapOpen) ChatMapDialog(app, mapFocus, authorName) { mapOpen = false }
 }
 
 private fun sameGroup(a: Message, b: Message): Boolean =
@@ -799,6 +818,13 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
                 onDismiss()
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("TNA", message.text))
+            })
+        }
+        message.location?.takeIf { message.kind == MessageKind.Location }?.let { loc ->
+            DropdownMenuItem(text = { Text("Копировать координаты") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = {
+                onDismiss()
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("TNA", LocationText.coordinates(loc)))
             })
         }
         if (message.status == MessageStatus.Failed && message.kind == MessageKind.Text) {

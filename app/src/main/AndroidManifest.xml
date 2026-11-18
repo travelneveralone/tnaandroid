@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Voice notes in chats. Asked at the first tap on the mic, never at launch. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Location in chats (a point or a live location). Asked when the user opens
+         "Геопозиция" in a chat, never at launch. Live sharing keeps running in a
+         foreground service of type "location" with an ongoing notification. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -23,6 +31,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".LiveLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- Share cards (passport, year recap) are written to cache/shared and handed
              to other apps through this provider. -->
