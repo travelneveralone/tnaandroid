@@ -43,6 +43,30 @@ enum class BiometryKind {
         }
 }
 
+/// How a biometric check without the PIN fallback ended (iOS `BiometricCheck`).
+enum class BiometricCheck {
+    Passed,
+    /// The person closed the prompt: nothing to say about it.
+    Cancelled,
+    /// Not recognised.
+    Failed,
+    /// Too many failed tries: biometrics are off until the device PIN is
+    /// entered on the lock screen. Retrying in the app cannot help.
+    LockedOut,
+    /// No enrolled biometrics or no sensor available right now.
+    Unavailable,
+}
+
+/// BiometricPrompt's error codes, reduced to what the login sheet says.
+fun biometricCheckFor(errorCode: Int): BiometricCheck = when (errorCode) {
+    BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+    BiometricPrompt.ERROR_CANCELED -> BiometricCheck.Cancelled
+    BiometricPrompt.ERROR_LOCKOUT, BiometricPrompt.ERROR_LOCKOUT_PERMANENT -> BiometricCheck.LockedOut
+    BiometricPrompt.ERROR_NO_BIOMETRICS, BiometricPrompt.ERROR_HW_NOT_PRESENT,
+    BiometricPrompt.ERROR_HW_UNAVAILABLE -> BiometricCheck.Unavailable
+    else -> BiometricCheck.Failed
+}
+
 interface Biometrics {
     val kind: BiometryKind
     /// Biometrics or a device PIN exist. False once the PIN is removed.
@@ -52,7 +76,7 @@ interface Biometrics {
     /// Biometrics only, no PIN fallback. Signing back in after a sign-out
     /// uses this: knowing the phone's PIN is not enough there, the fallback
     /// is an SMS code.
-    suspend fun authenticateBiometricsOnly(reason: String): Boolean
+    suspend fun authenticateBiometricsOnly(reason: String): BiometricCheck
 }
 
 /// Persisted flags; SharedPreferences in the app, a map in tests.
@@ -96,24 +120,25 @@ class AndroidBiometrics(context: Context) : Biometrics {
     override val canAuthenticate: Boolean
         get() = manager.canAuthenticate(BIOMETRIC_WEAK or DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
 
-    override suspend fun authenticate(reason: String): Boolean = prompt(reason, allowDeviceCredential = true)
+    override suspend fun authenticate(reason: String): Boolean =
+        prompt(reason, allowDeviceCredential = true) == BiometricCheck.Passed
 
-    override suspend fun authenticateBiometricsOnly(reason: String): Boolean =
+    override suspend fun authenticateBiometricsOnly(reason: String): BiometricCheck =
         prompt(reason, allowDeviceCredential = false)
 
-    private suspend fun prompt(reason: String, allowDeviceCredential: Boolean): Boolean {
-        val host = activity?.get() ?: return false
+    private suspend fun prompt(reason: String, allowDeviceCredential: Boolean): BiometricCheck {
+        val host = activity?.get() ?: return BiometricCheck.Unavailable
         return suspendCancellableCoroutine { cont ->
             val prompt = BiometricPrompt(
                 host,
                 ContextCompat.getMainExecutor(host),
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        if (cont.isActive) cont.resume(true)
+                        if (cont.isActive) cont.resume(BiometricCheck.Passed)
                     }
 
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        if (cont.isActive) cont.resume(false)
+                        if (cont.isActive) cont.resume(biometricCheckFor(errorCode))
                     }
                     // onAuthenticationFailed: one bad try, the prompt stays up.
                 },
@@ -137,6 +162,8 @@ class MockBiometrics(
     override var kind: BiometryKind = BiometryKind.Fingerprint,
     override var canAuthenticate: Boolean = true,
     var succeeds: Boolean = true,
+    /// What a biometrics-only check returns when [succeeds] is false.
+    var failure: BiometricCheck = BiometricCheck.Failed,
 ) : Biometrics {
     var prompts = 0
         private set
@@ -146,9 +173,9 @@ class MockBiometrics(
         return succeeds
     }
 
-    override suspend fun authenticateBiometricsOnly(reason: String): Boolean {
+    override suspend fun authenticateBiometricsOnly(reason: String): BiometricCheck {
         prompts += 1
-        return succeeds
+        return if (succeeds) BiometricCheck.Passed else failure
     }
 }
 
@@ -200,9 +227,11 @@ class AppLock(
     /// The login sheet offers a biometric sign-in only where the device has biometrics.
     val canConfirmQuickSignIn: Boolean get() = biometrics.kind.isAvailable
 
-    /// Biometric check in front of `AppModel.quickSignIn`.
-    suspend fun confirmQuickSignIn(): Boolean {
-        if (!canConfirmQuickSignIn || isAuthenticating) return false
+    /// Biometric check in front of `AppModel.quickSignIn`. A second tap while
+    /// the prompt is up counts as a cancel: the first check will answer.
+    suspend fun confirmQuickSignIn(): BiometricCheck {
+        if (!canConfirmQuickSignIn) return BiometricCheck.Unavailable
+        if (isAuthenticating) return BiometricCheck.Cancelled
         isAuthenticating = true
         try {
             return biometrics.authenticateBiometricsOnly(REASON)

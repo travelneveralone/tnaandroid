@@ -109,7 +109,7 @@ class AppLockTest {
         val flags = MapFlags()
         val bio = MockBiometrics()
         val l = lock(flags, bio)
-        assertTrue(l.confirmQuickSignIn())
+        assertEquals(BiometricCheck.Passed, l.confirmQuickSignIn())
         l.restoreAfterQuickSignIn()
         assertEquals(1, bio.prompts)          // no second prompt for the lock
         assertTrue(l.isEnabled)
@@ -119,12 +119,31 @@ class AppLockTest {
     }
 
     @Test fun quickSignInNeedsBiometrics() = runBlocking {
-        assertFalse(lock(MapFlags(), MockBiometrics(succeeds = false)).confirmQuickSignIn())
+        assertEquals(BiometricCheck.Failed, lock(MapFlags(), MockBiometrics(succeeds = false)).confirmQuickSignIn())
         val none = MockBiometrics(kind = BiometryKind.None)
         val l = lock(MapFlags(), none)
         assertFalse(l.canConfirmQuickSignIn)
-        assertFalse(l.confirmQuickSignIn())
+        assertEquals(BiometricCheck.Unavailable, l.confirmQuickSignIn())
         assertEquals(0, none.prompts)
+    }
+
+    /// The login sheet says why biometrics did not let the person in; a cancel
+    /// and a lockout must come back as themselves, not as a plain failure.
+    @Test fun quickSignInReportsWhyItStopped() = runBlocking {
+        for (failure in listOf(BiometricCheck.Cancelled, BiometricCheck.Failed, BiometricCheck.LockedOut)) {
+            val l = lock(MapFlags(), MockBiometrics(succeeds = false, failure = failure))
+            assertEquals(failure, l.confirmQuickSignIn())
+            assertFalse(l.isAuthenticating)
+        }
+    }
+
+    @Test fun promptErrorsMapToWhatTheSheetSays() {
+        assertEquals(BiometricCheck.Cancelled, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_USER_CANCELED))
+        assertEquals(BiometricCheck.Cancelled, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON))
+        assertEquals(BiometricCheck.LockedOut, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_LOCKOUT))
+        assertEquals(BiometricCheck.LockedOut, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_LOCKOUT_PERMANENT))
+        assertEquals(BiometricCheck.Unavailable, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_NO_BIOMETRICS))
+        assertEquals(BiometricCheck.Failed, biometricCheckFor(androidx.biometric.BiometricPrompt.ERROR_TIMEOUT))
     }
 
     @Test fun offeredOncePerAccount() {
@@ -159,8 +178,8 @@ class QuickSignInOutcomeTest {
 /// Mirrors TNATests/Auth/CodeRequestErrorTests.swift.
 class CodeRequestMessageTest {
     @Test fun hookSentenceIsShownAsIs() {
-        val body = """{"code":429,"error_code":"hook_error","msg":"Код уже отправлен. Новый можно запросить через 40 сек"}"""
-        assertEquals("Код уже отправлен. Новый можно запросить через 40 сек", codeRequestMessage(429, body))
+        val body = """{"code":429,"error_code":"hook_error","msg":"Повторная отправка возможна через 40 сек"}"""
+        assertEquals("Повторная отправка возможна через 40 сек", codeRequestMessage(429, body))
     }
 
     @Test fun nestedHookErrorIsRead() {

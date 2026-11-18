@@ -131,6 +131,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var loginStep by mutableStateOf(0)
     var loginError by mutableStateOf<String?>(null)
     var loginBusy by mutableStateOf(false)
+    /** Paces login codes (every one is a paid SMS): the resend countdown and
+     *  reusing a code still alive. Here, not in the sheet, so closing and
+     *  reopening the sheet does not reset it (iOS `AccountStore.codeCooldown`). */
+    val codeCooldown = CodeCooldown()
     var form by mutableStateOf<BookingForm?>(null)
 
     val visibleTabs: List<AppTab>
@@ -855,11 +859,31 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         loginBusy = true
         loginError = null
         viewModelScope.launch {
-            // Cancelled or failed biometrics: stay on the step, the button retries
-            // and the phone flow is right below. No error for a cancel.
-            if (!appLock.confirmQuickSignIn()) {
-                loginBusy = false
-                return@launch
+            // Not passed: stay on the step, the button retries and the phone
+            // flow is right below. A cancel needs no words; the rest says why.
+            when (appLock.confirmQuickSignIn()) {
+                BiometricCheck.Passed -> Unit
+                BiometricCheck.Cancelled -> {
+                    loginBusy = false
+                    return@launch
+                }
+                BiometricCheck.Failed -> {
+                    loginError = "Не получилось узнать тебя. Попробуй ещё раз или войди по номеру"
+                    loginBusy = false
+                    return@launch
+                }
+                BiometricCheck.LockedOut -> {
+                    loginError = "Биометрия временно заблокирована. Разблокируй телефон и попробуй снова или войди по номеру"
+                    loginBusy = false
+                    return@launch
+                }
+                BiometricCheck.Unavailable -> {
+                    // Biometrics are off for the app: the phone flow is the way in.
+                    if (loginNational.isEmpty() && account.quickPhone.isNotEmpty()) loginPhone = account.quickPhone
+                    leaveQuickSignIn()
+                    loginBusy = false
+                    return@launch
+                }
             }
             val keptPhone = account.quickPhone
             when (auth.quickSignIn()) {
@@ -868,6 +892,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     account.phone = keptPhone.ifEmpty { auth.currentPhone()?.let { PhoneNumber.pretty(it) }.orEmpty() }
                     account.quickPhone = ""
                     canQuickSignIn = false
+                    codeCooldown.forgetLiveCode()
                     // The lock was on at sign-out and biometrics have just passed.
                     appLock.restoreAfterQuickSignIn()
                     loginStep = 0
@@ -900,23 +925,72 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         loginError = null
     }
 
-    fun requestCode() {
+    /// Beta's canned numbers: their code is pre-filled and «Войти» is tapped
+    /// on purpose, so the code field must not sign in by itself.
+    val loginIsTestNumber: Boolean
+        get() = testLoginFor(loginPhone) != null
+
+    private fun testLoginFor(phone: String) =
+        if (isProd) null else Mock.testLogins.firstOrNull { PhoneNumber.digits(it.phone) == PhoneNumber.digits(phone) }
+
+    /// Asks for a code, spending an SMS only when one is needed (iOS
+    /// `AccountStore.requestCode`). [forceNew]: «Отправить код ещё раз».
+    fun requestCode(forceNew: Boolean = false) {
+        if (loginBusy) return
+        val phone = loginPhone
+        val now = System.currentTimeMillis()
+        // Back from «Изменить номер» with the same number while its code is
+        // still good: straight to typing it, a second SMS would only cost money.
+        if (!forceNew && codeCooldown.hasLiveCode(phone, now)) {
+            openCodeStep()
+            return
+        }
+        // Inside the server's pause the sheet counts down; nothing to send yet.
+        if (codeCooldown.secondsUntilNewCode(phone, now) > 0) return
         loginBusy = true
         loginError = null
         viewModelScope.launch {
-            runCatching { auth.requestCode(loginPhone) }
-                .onSuccess { loginStep = 1 }
-                .onFailure { loginError = it.message }
+            runCatching { auth.requestCode(phone) }
+                .onSuccess {
+                    codeCooldown.recordSent(phone, System.currentTimeMillis())
+                    openCodeStep()
+                }
+                .onFailure { error ->
+                    val wait = (error as? CodeRequestException)?.retryAfterSec
+                    if (wait != null) codeCooldown.recordRefusal(phone, wait, System.currentTimeMillis())
+                    // A pause is counted down on the sheet already; a second
+                    // copy of the same words would only go stale.
+                    loginError = if (wait != null && wait in 1 until 3600) null else codeRequestFailureText(error)
+                }
             loginBusy = false
         }
     }
 
+    /// The code step for the number on screen, with an empty field (beta's
+    /// canned numbers get their known code).
+    private fun openCodeStep() {
+        loginError = null
+        loginCode = testLoginFor(loginPhone)?.code.orEmpty()
+        loginStep = 1
+    }
+
+    /// «Изменить номер»: back to the number as typed, a wrong digit is fixed,
+    /// not retyped. The same number again reuses its code ([requestCode]).
+    fun changeLoginNumber() {
+        loginCode = ""
+        loginError = null
+        loginStep = 0
+    }
+
     fun verifyCode(onDone: () -> Unit = {}) {
+        if (loginBusy) return
         loginBusy = true
         loginError = null
         viewModelScope.launch {
             runCatching { auth.verify(loginPhone, loginCode) }
                 .onSuccess {
+                    // The code is used up; a later sign-in needs a new one.
+                    codeCooldown.forgetLiveCode()
                     account.isRegistered = true
                     account.phone = PhoneNumber.pretty(loginPhone)
                     // An SMS sign-in replaces whatever an earlier sign-out kept.
@@ -942,7 +1016,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                         onDone()
                     }
                 }
-                .onFailure { loginError = "Неверный код" }
+                .onFailure { loginError = codeVerifyFailureText(it) }
             loginBusy = false
         }
     }
@@ -952,6 +1026,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /// SMS that costs money. Everything else is wiped all the same.
     fun signOut(keepQuickSignIn: Boolean = false) {
         blocked = emptySet()
+        // A code in flight was for the session that is going away.
+        codeCooldown.forgetLiveCode()
         val keptPhone = account.phone
         auth.signOut(keepForQuickSignIn = keepQuickSignIn && account.isRegistered)
         canQuickSignIn = auth.hasQuickSignIn

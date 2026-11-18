@@ -306,13 +306,62 @@ const val TOO_MANY_CODE_ATTEMPTS = "Слишком много попыток. П
 /// send-sms hook answers with a ready Russian sentence; GoTrue's own limits
 /// answer 429 in English and get a generic line. Null = nothing specific.
 fun codeRequestMessage(status: Int, body: String): String? {
-    val obj = runCatching { JSON.parseToJsonElement(body).jsonObject }.getOrNull()
-    val text = obj?.let { o ->
-        listOf("msg", "message", "error_description").firstNotNullOfOrNull { o.str(it)?.takeIf(String::isNotEmpty) }
-            ?: o["error"]?.jsonObjectOrNull()?.str("message")?.takeIf(String::isNotEmpty)
-    }
+    val text = codeServerText(body)
     if (text != null && text.any { it in '\u0400'..'\u04FF' }) return text
     return if (status == 429) TOO_MANY_CODE_ATTEMPTS else null
+}
+
+/// GoTrue puts the reason in `msg`; older builds and hooks use other keys.
+private fun codeServerText(body: String): String? {
+    val obj = runCatching { JSON.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
+    return listOf("msg", "message", "error_description").firstNotNullOfOrNull { obj.str(it)?.takeIf(String::isNotEmpty) }
+        ?: obj["error"]?.jsonObjectOrNull()?.str("message")?.takeIf(String::isNotEmpty)
+}
+
+/// A refused code request: the words for the form and, when the server named
+/// it, how long to wait - the countdown on the form ([CodeCooldown]).
+class CodeRequestException(message: String, val retryAfterSec: Long?) : Exception(message)
+
+/// The refusal as the form should show it, or null when the answer says
+/// nothing specific (iOS `CodeRequestError.from`).
+fun codeRequestError(status: Int, body: String): CodeRequestException? {
+    val message = codeRequestMessage(status, body) ?: return null
+    return CodeRequestException(message, codeServerText(body)?.let(::codeRequestWait))
+}
+
+/// How long a refusal asks to wait: "через 40 сек" / "через 5 мин" /
+/// "через 3 ч" from the hook, "after 52 seconds" from GoTrue.
+fun codeRequestWait(text: String): Long? {
+    val patterns = listOf(
+        Regex("""через\s+(\d+)\s*(сек|мин|ч)""", RegexOption.IGNORE_CASE) to mapOf("сек" to 1L, "мин" to 60L, "ч" to 3600L),
+        Regex("""after\s+(\d+)\s*(second|minute|hour)""", RegexOption.IGNORE_CASE) to mapOf("second" to 1L, "minute" to 60L, "hour" to 3600L),
+    )
+    for ((regex, units) in patterns) {
+        val match = regex.find(text) ?: continue
+        val number = match.groupValues[1].toLongOrNull() ?: continue
+        val unit = units[match.groupValues[2].lowercase()] ?: continue
+        return number * unit
+    }
+    return null
+}
+
+/// The server did not accept a login code. [status] is GoTrue's answer.
+class CodeVerifyException(val status: Int) : Exception("Сервер ответил $status. Запрос не прошёл - можно повторить")
+
+/// Words for a code request that failed in any way.
+fun codeRequestFailureText(error: Throwable): String = when (error) {
+    is CodeRequestException -> error.message.orEmpty()
+    is java.io.IOException -> "Нет связи. Проверь интернет и попробуй ещё раз"
+    else -> "Не получилось отправить код. Попробуй ещё раз чуть позже"
+}
+
+/// Words for a code the server did not accept. GoTrue answers a wrong and an
+/// expired code the same way, so one sentence covers both and points to the
+/// way out (fix the digits or ask for a new code).
+fun codeVerifyFailureText(error: Throwable): String = when {
+    error is java.io.IOException -> "Нет связи. Проверь интернет и попробуй ещё раз"
+    error is CodeVerifyException && error.status == 429 -> "Слишком много попыток. Подожди немного и попробуй снова"
+    else -> "Код не подошёл или устарел. Проверь цифры или запроси новый"
 }
 
 /// Outcome of a biometric sign-in after a sign-out (iOS `QuickSignInResult`).
@@ -404,7 +453,7 @@ class AuthSession(
         val body = """{"phone":"$digits"}"""
         val (code, text) = exchange("/auth/v1/otp", body, bearer = null)
         if (code !in 200..299) {
-            throw TnaException(codeRequestMessage(code, text) ?: "Сервер ответил $code. Запрос не прошёл - можно повторить")
+            throw codeRequestError(code, text) ?: TnaException("Сервер ответил $code. Запрос не прошёл - можно повторить")
         }
     }
 
@@ -412,7 +461,7 @@ class AuthSession(
         val digits = PhoneNumber.digits(phone)
         val body = """{"type":"sms","phone":"$digits","token":"$code"}"""
         val (status, text) = exchange("/auth/v1/verify", body, bearer = null)
-        if (status !in 200..299) throw TnaException("Сервер ответил $status. Запрос не прошёл - можно повторить")
+        if (status !in 200..299) throw CodeVerifyException(status)
         store(text)
         // An SMS sign-in supersedes whatever an earlier sign-out kept.
         forgetQuickSignIn()

@@ -34,6 +34,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -119,10 +122,27 @@ private fun TwoLineTitle(top: String, bottom: String, topSize: Int = 34, bottomS
 
 // MARK: - Login
 
+/// Digits in an SMS code (`GOTRUE_SMS_OTP_LENGTH`). Mock accepts "0000", so
+/// «Войти» still works from four digits.
+private const val LOGIN_CODE_LENGTH = 6
+
+/// Every code is a paid SMS, so the code step never asks for one it does not
+/// need (iOS `LoginView`, [CodeCooldown] in AppModel): «Отправить код ещё раз»
+/// shows after the server's 60 s pause with a live countdown until then;
+/// «Изменить номер» keeps the typed number, and the same number again reuses
+/// its code; a full code signs in without a tap.
 @Composable
 fun LoginSheet(app: AppModel) {
     val testLogins = if (app.isProd) emptyList() else Mock.testLogins
     var done by remember { mutableStateOf(false) }
+    // Re-read every second so the resend countdown ticks.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
     if (done) {
         LaunchedEffect(Unit) { delay(5000); app.sheet = null }
         SheetColumn {
@@ -196,45 +216,87 @@ fun LoginSheet(app: AppModel) {
                     }
                 }
             }
-            PrimaryButton(
-                if (app.loginBusy) "Отправляем…" else "Получить код",
-                enabled = !app.loginBusy && PhoneInput.isComplete(app.loginNational, app.loginCountry),
-                icon = Icons.AutoMirrored.Filled.ArrowForward,
-            ) { app.requestCode() }
+            val complete = PhoneInput.isComplete(app.loginNational, app.loginCountry)
+            val live = complete && app.codeCooldown.hasLiveCode(app.loginPhone, now)
+            val wait = if (complete) app.codeCooldown.secondsUntilNewCode(app.loginPhone, now) else 0L
+            when {
+                // Back from «Изменить номер» with the same number: its code is
+                // still good, a second SMS would only cost money.
+                live -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton("Ввести код", icon = Icons.AutoMirrored.Filled.ArrowForward) { app.requestCode() }
+                    Text("Код на этот номер уже отправлен, новый не нужен", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+                wait > 0 -> PrimaryButton(
+                    "Повторная отправка через ${CodeCooldown.countdown(wait)}",
+                    enabled = false,
+                    icon = Icons.Filled.Timer,
+                ) {}
+                else -> PrimaryButton(
+                    if (app.loginBusy) "Отправляем…" else "Получить код",
+                    enabled = !app.loginBusy && complete,
+                    icon = Icons.AutoMirrored.Filled.ArrowForward,
+                ) { app.requestCode() }
+            }
             ConsentFooter()
         } else {
-            LoginField(app.loginCode, "Код из СМС", KeyboardType.NumberPassword) { app.loginCode = it }
+            LoginCodeField(app.loginCode) { typed ->
+                val digits = typed.filter { it in '0'..'9' }.take(LOGIN_CODE_LENGTH)
+                app.loginCode = digits
+                if (digits.length == LOGIN_CODE_LENGTH && !app.loginBusy && !app.loginIsTestNumber) {
+                    app.verifyCode { done = true }
+                }
+            }
             PrimaryButton(
                 if (app.loginBusy) "Проверяем…" else "Войти",
                 enabled = !app.loginBusy && app.loginCode.length >= 4,
                 icon = Icons.Filled.Check,
             ) { app.verifyCode { done = true } }
-            Text(
-                "Изменить номер",
-                color = TnaColor.accent,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.pressable { app.loginStep = 0; app.loginCode = ""; app.loginError = null },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val wait = app.codeCooldown.secondsUntilNewCode(app.loginPhone, now)
+                if (wait > 0) {
+                    Text("Повторная отправка возможна через ${CodeCooldown.countdown(wait)}", color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                } else {
+                    Text(
+                        if (app.loginBusy) "Отправляем…" else "Отправить код ещё раз",
+                        color = TnaColor.accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.pressable(enabled = !app.loginBusy) { app.requestCode(forceNew = true) },
+                    )
+                }
+                Text(
+                    "Изменить номер",
+                    color = TnaColor.accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.pressable(enabled = !app.loginBusy) { app.changeLoginNumber() },
+                )
+            }
         }
         app.loginError?.let { Text(it, color = TnaColor.danger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
 
+/// The SMS code: digits only, focused at once so the keyboard is up.
 @Composable
-private fun LoginField(value: String, placeholder: String, keyboard: KeyboardType, onChange: (String) -> Unit) {
+private fun LoginCodeField(value: String, onChange: (String) -> Unit) {
     val shape = RoundedCornerShape(16.dp)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(350)
+        runCatching { focus.requestFocus() }
+    }
     BasicTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        textStyle = TextStyle(color = TnaColor.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+        textStyle = TextStyle(color = TnaColor.ink, fontSize = 22.sp, fontWeight = FontWeight.Bold),
         cursorBrush = SolidColor(TnaColor.accent),
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        modifier = Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(horizontal = 16.dp, vertical = 14.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        modifier = Modifier.fillMaxWidth().focusRequester(focus).clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(horizontal = 16.dp, vertical = 12.dp),
         decorationBox = { inner ->
             Box {
-                if (value.isEmpty()) Text(placeholder, color = TnaColor.subtle, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                if (value.isEmpty()) Text("Код из SMS", color = TnaColor.subtle, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 inner()
             }
         },
