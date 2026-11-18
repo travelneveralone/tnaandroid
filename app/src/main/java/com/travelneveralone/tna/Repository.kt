@@ -466,11 +466,37 @@ class TnaRepository(
         }
     }
 
-    suspend fun removeMember(chatId: UUID, userId: UUID) {
-        runCatching {
-            api.rpc("remove_chat_member", buildJsonObject { put("p_chat", chatId.toString()); put("p_user", userId.toString()) }.toString())
+    /// Team (guide, curator, manager, admin) may remove travellers from this trip chat (0157).
+    suspend fun canBlockInChat(chatId: UUID): Boolean = runCatching {
+        api.rpc("can_block_in_chat", buildJsonObject { put("p_chat", chatId.toString()) }.toString()).trim() == "true"
+    }.getOrDefault(false)
+
+    /// People the team removed from this chat; empty unless the caller may block here.
+    suspend fun blockedMembers(chatId: UUID): List<ChatParticipant> = runCatching {
+        val raw = api.rpc("chat_blocked_members", buildJsonObject { put("p_chat", chatId.toString()) }.toString())
+        json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
+            val row = el.jsonObjectOrNull() ?: return@mapNotNull null
+            val id = row.str("user_id")?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return@mapNotNull null
+            ChatParticipant(
+                id = id,
+                name = row.str("name").orEmpty(),
+                city = row.str("city").orEmpty(),
+                role = row.str("role") ?: "client",
+                isAdmin = false,
+                muted = false,
+                avatarUrl = row.str("avatar"),
+                isBlocked = true,
+                blockedBy = row.str("blocked_by").orEmpty(),
+            )
         }
-    }
+    }.getOrDefault(emptyList())
+
+    /// Block (`true`) or bring back (`false`) a traveller. `false` on failure.
+    suspend fun setMemberBlocked(chatId: UUID, userId: UUID, blocked: Boolean): Boolean = runCatching {
+        api.rpc("set_chat_member_blocked", buildJsonObject {
+            put("p_chat", chatId.toString()); put("p_user", userId.toString()); put("p_blocked", blocked)
+        }.toString()).trim() == "true"
+    }.getOrDefault(false)
 
     /// Short privacy-safe card of another user (header of a 1:1 chat).
     suspend fun miniProfile(userId: UUID): MiniProfile? = runCatching {

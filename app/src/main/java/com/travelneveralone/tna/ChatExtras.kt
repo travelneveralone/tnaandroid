@@ -604,7 +604,9 @@ fun ParticipantsSheet(app: AppModel) {
                                     app.participantsShown = false
                                     app.openMiniProfile(MiniProfile(p.id, shown, p.city, p.role, p.avatarUrl, p.isAdmin))
                                 },
-                                onLongClick = { if (app.chatStaff && !isMe) menuFor = p.id },
+                                onLongClick = {
+                                    if (!isMe && (app.chatStaff || ChatModeration.canBlock(p, app.myUserId, app.chatCanBlock))) menuFor = p.id
+                                },
                             )
                             .clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -622,20 +624,77 @@ fun ParticipantsSheet(app: AppModel) {
                         Icon(Icons.Filled.ChevronRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(menuFor == p.id, onDismissRequest = { menuFor = null }, containerColor = TnaColor.surface) {
-                        DropdownMenuItem(
-                            text = { Text(if (p.muted) "Разрешить писать" else "Запретить писать") },
-                            leadingIcon = { Icon(if (p.muted) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff, null) },
-                            onClick = { menuFor = null; app.setMemberMuted(p, !p.muted) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Удалить из чата", color = TnaColor.danger) },
-                            leadingIcon = { Icon(Icons.Filled.PersonRemove, null, tint = TnaColor.danger) },
-                            onClick = { menuFor = null; app.removeMember(p) },
-                        )
+                        if (app.chatStaff) {
+                            DropdownMenuItem(
+                                text = { Text(if (p.muted) "Разрешить писать" else "Запретить писать") },
+                                leadingIcon = { Icon(if (p.muted) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff, null) },
+                                onClick = { menuFor = null; app.setMemberMuted(p, !p.muted) },
+                            )
+                        }
+                        if (ChatModeration.canBlock(p, app.myUserId, app.chatCanBlock)) {
+                            DropdownMenuItem(
+                                text = { Text("Удалить из чата", color = TnaColor.danger) },
+                                leadingIcon = { Icon(Icons.Filled.PersonRemove, null, tint = TnaColor.danger) },
+                                onClick = { menuFor = null; app.blockTarget = p },
+                            )
+                        }
+                    }
+                }
+            }
+            // Removed from the chat (0157) - team only; "Вернуть" brings them back.
+            val removed = app.removedParticipants
+            if (removed.isNotEmpty()) {
+                item(key = "removed-header") {
+                    Text(
+                        "УДАЛЕНЫ ИЗ ЧАТА", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(top = 16.dp, start = 4.dp),
+                    )
+                }
+                items(removed.size, key = { "removed-" + removed[it].id }) { index ->
+                    val p = removed[index]
+                    val shape = RoundedCornerShape(16.dp)
+                    Row(
+                        Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface.copy(alpha = 0.6f))
+                            .border(1.dp, TnaColor.stroke, shape).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Avatar(p.avatarUrl, p.name, 44)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(p.name, color = TnaColor.subtle, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                if (p.blockedBy.isBlank()) "Удалён из чата" else "Удалил(а): ${p.blockedBy}",
+                                color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1,
+                            )
+                        }
+                        if (ChatModeration.canUnblock(p, app.chatCanBlock)) {
+                            Text(
+                                "Вернуть", color = TnaColor.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(CircleShape).background(TnaColor.accent.copy(alpha = 0.14f))
+                                    .pressable(0.95f) { app.setMemberBlocked(p, false) }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+    app.blockTarget?.let { p ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { app.blockTarget = null },
+            title = { Text("Удалить ${p.name} из чата?") },
+            text = { Text("Человек перестанет видеть этот чат и писать в него. Из заезда он не пропадёт. Вернуть можно здесь же, внизу списка.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { app.blockTarget = null; app.setMemberBlocked(p, true) }) {
+                    Text("Удалить из чата", color = TnaColor.danger)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { app.blockTarget = null }) { Text("Отмена") }
+            },
+            containerColor = TnaColor.surface,
+        )
     }
 }
 

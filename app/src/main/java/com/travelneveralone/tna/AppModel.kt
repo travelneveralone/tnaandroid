@@ -382,6 +382,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     var participants by mutableStateOf<List<ChatParticipant>>(emptyList())
     var participantsShown by mutableStateOf(false)
+    /// Team member in this trip chat: may remove travellers and bring them back (0157).
+    var chatCanBlock by mutableStateOf(false)
+    /// People the team removed from the open chat (team only).
+    var removedParticipants by mutableStateOf<List<ChatParticipant>>(emptyList())
+    /// Who is about to be removed - drives the confirmation dialog.
+    var blockTarget by mutableStateOf<ChatParticipant?>(null)
     /// Authors the caller has blocked - their messages are hidden.
     var blocked by mutableStateOf<Set<UUID>>(emptySet())
     var myUserId by mutableStateOf<UUID?>(null)
@@ -390,14 +396,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun loadChatExtras(thread: ChatThread) = viewModelScope.launch {
         pinned = emptyList()
         chatStaff = false
+        chatCanBlock = false
         participants = emptyList()
+        removedParticipants = emptyList()
         if (thread.id == ChatThread.supportPlaceholder.id) return@launch
         if (blocked.isEmpty()) blocked = repo.blockedIds()
         pinned = repo.fetchPinned(thread.id)
         if (thread.kind == ChatThreadKind.Trip) {
             chatStaff = repo.isChatStaff(thread.id)
+            chatCanBlock = repo.canBlockInChat(thread.id)
             myUserId = auth.currentUserId()
             participants = repo.chatParticipants(thread.id)
+            removedParticipants = if (chatCanBlock) repo.blockedMembers(thread.id) else emptyList()
         }
     }
 
@@ -409,10 +419,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         participants = repo.chatParticipants(chat)
     }
 
-    fun removeMember(person: ChatParticipant) = viewModelScope.launch {
+    /// Remove a traveller from the trip chat (`true`) or bring them back (`false`).
+    fun setMemberBlocked(person: ChatParticipant, blocked: Boolean) = viewModelScope.launch {
         val chat = openChat?.id ?: return@launch
-        repo.removeMember(chat, person.id)
+        if (!repo.setMemberBlocked(chat, person.id, blocked)) {
+            chatNotice = "Не получилось. Проверь сеть и попробуй ещё раз."
+        }
         participants = repo.chatParticipants(chat)
+        removedParticipants = if (chatCanBlock) repo.blockedMembers(chat) else emptyList()
     }
 
     fun reportMessage(message: Message) = viewModelScope.launch {

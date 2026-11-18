@@ -347,10 +347,26 @@ data class ChatParticipant(
     val isAdmin: Boolean,
     val muted: Boolean,
     val avatarUrl: String? = null,
+    /// Blocked in this trip chat by the team (0157): out of the chat until unblocked.
+    val isBlocked: Boolean = false,
+    /// Who blocked them (name), for the "removed from chat" section.
+    val blockedBy: String = "",
 ) {
     val roleTag: String? get() = staffTag(isAdmin, role)
     /// Partners are faceless representatives - never a personal name.
     val shownName: String get() = if (role == "partner") ChatNames.PARTNER else name
+}
+
+/// Who may be blocked in a trip chat (0157) - iOS `ChatModeration`. The server is
+/// the authority (`can_block_in_chat` / `set_chat_member_blocked`); this only decides
+/// which rows get the action, so the menu never offers something the server refuses.
+object ChatModeration {
+    /// Only travellers can be blocked - never yourself, staff or partners.
+    fun canBlock(p: ChatParticipant, me: UUID?, canBlockHere: Boolean): Boolean =
+        canBlockHere && p.id != me && !p.isBlocked && p.role == "client"
+
+    /// Any team member who may block here may also bring someone back.
+    fun canUnblock(p: ChatParticipant, canBlockHere: Boolean): Boolean = canBlockHere && p.isBlocked
 }
 
 /// Chat display rules shared by bubbles, the participant list and @-mentions.
