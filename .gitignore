@@ -15,3 +15,4 @@
 keystore.properties
 *.ap_
 *.hprof
+.kotlin

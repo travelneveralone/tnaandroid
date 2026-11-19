@@ -428,6 +428,7 @@ fun pinnedPreview(m: Message): String = when (m.kind) {
     MessageKind.File -> "📎 ${m.mediaName ?: "Файл"}"
     MessageKind.Audio -> "🎤 Голосовое"
     MessageKind.Poll -> "📊 ${m.poll?.question ?: m.text}"
+    MessageKind.Location -> m.text.ifEmpty { m.location?.let { LocationText.label(it) } ?: "📍 Геопозиция" }
     MessageKind.Text -> m.text
 }
 
