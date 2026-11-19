@@ -686,7 +686,13 @@ object Mappers {
         val departures = obj["departures"]?.arrayOrEmpty()?.mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
             Departure(
-                label = row.str("label").orEmpty(),
+                // «Сакура · 28 мар – 7 апр 2027» - always with the year (TNA-67).
+                label = DepartureDates.tagged(
+                    DepartureDates.label(
+                        Dates.parseDay(row.str("starts_on")), Dates.parseDay(row.str("ends_on")), row.str("label").orEmpty(),
+                    ),
+                    row.str("tag"),
+                ),
                 spotsLeft = row.int("spots_left") ?: 0,
                 startsOn = Dates.parseDay(row.str("starts_on")),
                 backendId = row.str("id")?.let(UUID::fromString),

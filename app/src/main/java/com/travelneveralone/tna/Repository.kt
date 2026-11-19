@@ -27,7 +27,7 @@ class TnaRepository(
         val today = Dates.todayUtc().toString()
         val columns = "id,slug,name,tagline,hashtag,region,days,km,price_from," +
             "difficulty,max_altitude,symbol,color_start,color_end,image_url,video_url,includes," +
-            "tour_days(day_number,title,details),departures(id,label,spots_left,starts_on)," +
+            "tour_days(day_number,title,details),departures(id,label,spots_left,starts_on,ends_on,tag)," +
             "tour_images(url,sort)"
         val raw = api.get("tours", listOf(
             "select" to columns,
@@ -210,7 +210,7 @@ class TnaRepository(
     suspend fun fetchDepartures(): List<DepartureItem> {
         val today = Dates.todayUtc().toString()
         val raw = api.get("departures", listOf(
-            "select" to "id,label,starts_on,ends_on,spots_left,status,tours(id,name,region,color_start,color_end)",
+            "select" to "id,label,starts_on,ends_on,spots_left,status,tag,tours(id,name,region,color_start,color_end)",
             "ends_on" to "gte.$today",
             "status" to "in.(open,full,in_progress)",
             "order" to "starts_on.asc",
@@ -227,7 +227,7 @@ class TnaRepository(
                 season = seasonName(start),
                 region = TourRegion.fromRaw(tour.str("region").orEmpty()),
                 colors = listOf(Mappers.hex(tour.str("color_start")), Mappers.hex(tour.str("color_end"))),
-                label = row.str("label").orEmpty(),
+                label = DepartureDates.tagged(DepartureDates.label(start, end), row.str("tag")),
                 startsOn = start,
                 endsOn = end,
                 spotsLeft = row.int("spots_left") ?: 0,
@@ -246,7 +246,10 @@ class TnaRepository(
                 tourName = row.str("tour_name") ?: row.str("name").orEmpty(),
                 colors = listOf(Mappers.hex(row.str("color_start")), Mappers.hex(row.str("color_end"))),
                 symbol = row.str("symbol").orEmpty(),
-                label = row.str("label").orEmpty(),
+                // Built from the dates so the year is there even in an old cache.
+                label = DepartureDates.label(
+                    Dates.parseDay(row.str("starts_on")), Dates.parseDay(row.str("ends_on")), row.str("label").orEmpty(),
+                ),
                 startsOn = Dates.parseDay(row.str("starts_on")),
                 endsOn = Dates.parseDay(row.str("ends_on")),
                 status = row.str("status").orEmpty(),
@@ -689,7 +692,7 @@ class TnaRepository(
         val dayIndex = obj.int("day_index")
         TripPlan(
             tourName = obj.str("tour_name").orEmpty(),
-            dateRange = TripPackMapper.dateRange(start, end),
+            dateRange = DepartureDates.label(start, end, obj.str("label").orEmpty()),
             statusLine = TripPackMapper.statusLine(
                 phase = obj.str("phase") ?: "upcoming",
                 dayIndex = dayIndex,

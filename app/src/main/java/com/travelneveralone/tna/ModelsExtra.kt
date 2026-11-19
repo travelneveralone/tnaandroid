@@ -171,14 +171,6 @@ data class TripScheduleItem(val time: String, val title: String, val icon: Strin
 object TripPackMapper {
     private val ru = java.util.Locale("ru")
     private val dayMonth = java.time.format.DateTimeFormatter.ofPattern("d MMM", ru)
-    private val dayOnly = java.time.format.DateTimeFormatter.ofPattern("d", ru)
-
-    fun dateRange(start: LocalDate?, end: LocalDate?): String {
-        if (start == null || end == null) return ""
-        val sameMonth = start.year == end.year && start.monthValue == end.monthValue
-        val head = if (sameMonth) dayOnly.format(start) else dayMonth.format(start)
-        return "$head – ${dayMonth.format(end)}"
-    }
 
     fun statusLine(phase: String, dayIndex: Int?, totalDays: Int, todayTitle: String?, start: LocalDate?, today: LocalDate = LocalDate.now()): String =
         when (phase) {

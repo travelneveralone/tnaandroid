@@ -255,6 +255,22 @@ class DomainRulesTest {
         assertTrue(TripPackMapper.statusLine("upcoming", null, 7, null, start, today = start.minusDays(3)).endsWith("через 3 дня"))
     }
 
+    /** Same cases as iOS DepartureDatesTests and SQL departure_label() (0168). */
+    @Test
+    fun departureLabelAlwaysHasTheYear() {
+        val d = { s: String -> LocalDate.parse(s) }
+        assertEquals("21–23 фев 2027", DepartureDates.label(d("2027-02-21"), d("2027-02-23")))
+        assertEquals("28 фев – 3 мар 2027", DepartureDates.label(d("2027-02-28"), d("2027-03-03")))
+        assertEquals("30 дек 2026 – 2 янв 2027", DepartureDates.label(d("2026-12-30"), d("2027-01-02")))
+        assertEquals("1 мая 2027", DepartureDates.label(d("2027-05-01"), d("2027-05-01")))
+        assertEquals("1 мая 2027", DepartureDates.label(d("2027-05-01"), null))
+        assertEquals("1–8 мая 2027", DepartureDates.label(d("2027-05-01"), d("2027-05-08")))
+        assertEquals("12–22 авг", DepartureDates.label(null, null, "12–22 авг"))
+        assertEquals("Сакура · 28 мар – 7 апр 2027", DepartureDates.tagged("28 мар – 7 апр 2027", "сакура"))
+        assertEquals("НГ · 1 мая 2027", DepartureDates.tagged("1 мая 2027", "НГ"))
+        assertEquals("1 мая 2027", DepartureDates.tagged("1 мая 2027", " "))
+    }
+
     @Test
     fun nameDisplayVariants() {
         assertEquals(listOf("Аня", "Аня Сергеевна", "Козикова Аня", "Козикова А.", "Аня К."), NameDisplay.variants("Козикова", "Аня", "Сергеевна"))

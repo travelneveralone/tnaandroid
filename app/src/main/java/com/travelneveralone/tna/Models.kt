@@ -738,6 +738,42 @@ object Dates {
     }
 }
 
+/**
+ * How a departure's dates read to a client: always with the year, so a February
+ * tour can't be mistaken for last or next February (TNA-67). Mirrors iOS
+ * `DepartureDates`, SQL `departure_label()` (0168) and the admin's
+ * `departureLabel()` - keep all four in step.
+ */
+object DepartureDates {
+    /** "1–8 мая" form: genitive "мая", not "май". */
+    private val months = listOf("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+    /** «3 янв 2027», «21–23 фев 2027», «28 фев – 3 мар 2027», «30 дек 2026 – 2 янв 2027». */
+    fun label(start: LocalDate, end: LocalDate?): String {
+        val b = end ?: start
+        val nameA = months[start.monthValue - 1]
+        val nameB = months[b.monthValue - 1]
+        return when {
+            start == b -> "${start.dayOfMonth} $nameA ${start.year}"
+            start.year == b.year && start.monthValue == b.monthValue -> "${start.dayOfMonth}–${b.dayOfMonth} $nameB ${b.year}"
+            start.year == b.year -> "${start.dayOfMonth} $nameA – ${b.dayOfMonth} $nameB ${b.year}"
+            else -> "${start.dayOfMonth} $nameA ${start.year} – ${b.dayOfMonth} $nameB ${b.year}"
+        }
+    }
+
+    /** From the dates when the start is known, else the server text (old cache, fixtures). */
+    fun label(start: LocalDate?, end: LocalDate?, fallback: String): String =
+        if (start == null) fallback else label(start, end)
+
+    /** The mark goes in front with a capital first letter: «Сакура · 28 мар – 7 апр 2027». */
+    fun tagged(label: String, tag: String?): String {
+        val mark = tag?.trim().orEmpty()
+        if (mark.isEmpty()) return label
+        val head = mark.substring(0, 1).uppercase() + mark.substring(1)
+        return if (label.isEmpty()) head else "$head · $label"
+    }
+}
+
 object Money {
     fun grouped(value: Int): String {
         val negative = value < 0
