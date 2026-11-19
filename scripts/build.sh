@@ -24,20 +24,26 @@ fi
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 [ -n "${JAVA_HOME:-}" ] || { echo "JAVA_HOME is not set and openjdk@21 is not in Homebrew" >&2; exit 69; }
 
+# Build number shown in Profile, same shape as iOS (YYMMDD.N there, YYMMDD.HHMM
+# here); versionCode must only grow, so it counts minutes since 2024-01-01.
+TNA_BUILD="${TNA_BUILD:-$(date +%y%m%d.%H%M)}"
+TNA_CODE="${TNA_CODE:-$(( ($(date +%s) - 1704067200) / 60 ))}"
+GRADLE_BUILD_ARGS=(-PtnaBuild="$TNA_BUILD" -PtnaCode="$TNA_CODE")
+
 if [ "$ENV" = prod ] && [ -f keystore.properties ]; then
-  ./gradlew :app:bundleProdRelease
+  ./gradlew "${GRADLE_BUILD_ARGS[@]}" :app:bundleProdRelease
   OUT="app/build/outputs/bundle/prodRelease/app-prod-release.aab"
   NOTE="upload it in Play Console → TNA → Testing/Production → Create release"
 elif [ "$ENV" = prod ]; then
-  ./gradlew :app:assembleProdDebug
+  ./gradlew "${GRADLE_BUILD_ARGS[@]}" :app:assembleProdDebug
   OUT="app/build/outputs/apk/prod/debug/app-prod-debug.apk"
   NOTE="no keystore.properties, so this is the direct-install APK, not a Play build"
 else
-  ./gradlew :app:assembleBetaDebug
+  ./gradlew "${GRADLE_BUILD_ARGS[@]}" :app:assembleBetaDebug
   OUT="app/build/outputs/apk/beta/debug/app-beta-debug.apk"
   NOTE="beta base - for us, not for clients"
 fi
 
 [ -f "$OUT" ] || { echo "build finished but $OUT is missing" >&2; exit 1; }
-printf '\n\033[32mandroid %s:\033[0m %s\n%s\n' "$ENV" "$ROOT/$OUT" "$NOTE"
+printf '\n\033[32mandroid %s, build %s:\033[0m %s\n%s\n' "$ENV" "$TNA_BUILD" "$ROOT/$OUT" "$NOTE"
 command -v open >/dev/null && open -R "$OUT" || true

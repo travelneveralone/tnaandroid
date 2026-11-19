@@ -21,8 +21,13 @@ android {
         applicationId = "com.travelneveralone.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        // Build number like iOS: YYMMDD.HHMM, set by scripts/build.sh. It is what
+        // testers read at the bottom of Profile and type into bug reports, so
+        // every build must differ; a build from Android Studio shows "dev".
+        val tnaBuild = (findProperty("tnaBuild") as String?)?.takeIf { it.isNotBlank() } ?: "dev"
+        versionCode = (findProperty("tnaCode") as String?)?.toIntOrNull() ?: 1
         versionName = "1.0"
+        buildConfigField("String", "TNA_BUILD", "\"$tnaBuild\"")
     }
 
     flavorDimensions += "env"

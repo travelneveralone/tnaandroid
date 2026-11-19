@@ -207,7 +207,8 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
 }
 
 @Suppress("UNUSED_PARAMETER")
-private fun appVersion(context: Context): String = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+// "1.0-beta (261119.1435)": the number in brackets is the build testers report.
+private fun appVersion(context: Context): String = "${BuildConfig.VERSION_NAME} (${BuildConfig.TNA_BUILD})"
 
 @Composable
 private fun ProfileHeader(app: AppModel) {
