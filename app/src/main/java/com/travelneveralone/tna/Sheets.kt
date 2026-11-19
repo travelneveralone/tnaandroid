@@ -156,8 +156,8 @@ fun LoginSheet(app: AppModel) {
     // a biometric sign-in (no SMS), the phone flow is one tap away (iOS LoginView).
     val quick = app.loginStep == 0 && app.showsQuickSignIn
     if (quick) {
-        // The prompt comes up by itself, like in a banking app.
-        LaunchedEffect(Unit) { app.quickSignIn() }
+        // No prompt by itself: biometrics only on a tap of the button below,
+        // so the person can pick another number first (iOS LoginView).
         SheetColumn(spacing = 20) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("ВХОД", style = displayStyle(34))
