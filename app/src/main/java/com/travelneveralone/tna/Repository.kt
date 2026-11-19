@@ -765,7 +765,7 @@ class TnaRepository(
         val me = auth.currentUserId()
         val membership = if (me == null) "chat_members" else "chat_members!inner"
         val query = mutableListOf(
-            "select" to "id,kind,title,unread_from_others,messages(text,created_at,user_id),$membership(last_read_at,muted,archived),members:chat_members(user_id,profiles:public_profiles(name,avatar_url)),departures(tours(symbol,color_start,color_end,image_url))",
+            "select" to "id,kind,title,unread_from_others,messages(text,created_at,user_id),$membership(last_read_at,muted,archived),members:chat_members(user_id,profiles:public_profiles!user_id(name,avatar_url)),departures(tours(symbol,color_start,color_end,image_url))",
             "messages.order" to "created_at.desc",
             "messages.limit" to "1",
             "order" to "created_at.desc",
