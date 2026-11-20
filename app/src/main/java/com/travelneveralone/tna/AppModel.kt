@@ -313,7 +313,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val live = resolveThread(thread)
             runCatching { repo.sendText(live.id, local.text, local.id, local.replyTo) }
-                .onSuccess { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it } }
+                .onSuccess {
+                    messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it }
+                    // Push after the tick: never keep the bubble waiting on it.
+                    launch { repo.notifyMessage(local.id) }
+                }
                 .onFailure { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Failed) else it } }
         }
     }
@@ -378,10 +382,16 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun react(messageId: UUID, emoji: String) {
         val current = messages.firstOrNull { it.id == messageId } ?: return
-        val mine = current.reactions.firstOrNull { it.emoji == emoji }?.mine == true
         reactionFor = null
+        // No server row yet: the reaction would hit the foreign key and vanish.
+        if (current.status != MessageStatus.Sent) {
+            chatNotice = "Сообщение ещё не отправлено - реакцию можно поставить после отправки"
+            return
+        }
+        val mine = current.reactions.firstOrNull { it.emoji == emoji }?.mine == true
         viewModelScope.launch {
             runCatching { repo.react(messageId, emoji, mine) }
+                .onFailure { chatNotice = "Не удалось поставить реакцию" }
             val id = openChat?.id ?: return@launch
             messages = runCatching { repo.history(id) }.getOrDefault(messages)
         }
@@ -571,6 +581,27 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             val live = resolveThread(thread)
             runCatching { repo.sendAttachment(live.id, bytes, kind, ext, contentType, name, durationMs) }
                 .onFailure { chatNotice = "Не удалось отправить вложение" }
+            uploading = false
+            reloadOpenChat()
+        }
+    }
+
+    /// Gallery photos sent as files: original bytes, no recompression, so the
+    /// team can download them at full quality. One after another, like iOS.
+    fun sendPhotosAsFiles(files: List<PickedPhotoFile>) {
+        val thread = openChat ?: return
+        if (files.isEmpty()) return
+        if (!network.isOnline) {
+            chatNotice = "Вложения отправляются только онлайн"
+            return
+        }
+        uploading = true
+        viewModelScope.launch {
+            val live = resolveThread(thread)
+            for (f in files) {
+                val ok = runCatching { repo.sendAttachment(live.id, f.bytes, MessageKind.File, f.ext, f.mime, f.name, null) }
+                if (ok.isFailure) { chatNotice = "Не удалось отправить вложение"; break }
+            }
             uploading = false
             reloadOpenChat()
         }
@@ -1234,3 +1265,6 @@ private fun AndroidViewModel.deviceRegion(): String? {
         java.util.Locale.getDefault().country,
     ).firstOrNull { it.length == 2 }?.uppercase()
 }
+
+/// One gallery photo picked to be sent as a file (iOS PickedPhotoFile).
+class PickedPhotoFile(val bytes: ByteArray, val ext: String, val mime: String, val name: String)

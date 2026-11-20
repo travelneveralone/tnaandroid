@@ -314,6 +314,20 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
         val ext = name.substringAfterLast('.', "bin").lowercase()
         app.sendAttachment(bytes, MessageKind.File, ext, type, name)
     }
+    // "Фото как файл": originals from the gallery, sent uncompressed as files.
+    val photoFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val resolver = context.contentResolver
+        val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        val files = uris.take(10).mapIndexedNotNull { n, uri ->
+            val bytes = runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return@mapIndexedNotNull null
+            val mime = resolver.getType(uri) ?: "image/jpeg"
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "jpg"
+            val suffix = if (uris.size > 1) "_${n + 1}" else ""
+            PickedPhotoFile(bytes, ext, mime, "IMG_$stamp$suffix.$ext")
+        }
+        if (files.isEmpty()) app.chatNotice = "Не удалось прочитать файл" else app.sendPhotosAsFiles(files)
+    }
     val recorder = remember { VoiceRecorder(context) }
     var recording by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -480,6 +494,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
             )
             DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }, containerColor = TnaColor.surface) {
                 DropdownMenuItem(text = { Text("Фото") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; picker.launch("image/*") })
+                DropdownMenuItem(text = { Text("Фото как файл") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; photoFilePicker.launch("image/*") })
                 DropdownMenuItem(text = { Text("Файл") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { attachMenu = false; filePicker.launch("*/*") })
                 if (thread.kind == ChatThreadKind.Trip) {
                     DropdownMenuItem(text = { Text("Опрос") }, leadingIcon = { Icon(Icons.Filled.Poll, null) }, onClick = { attachMenu = false; composingPoll = true })

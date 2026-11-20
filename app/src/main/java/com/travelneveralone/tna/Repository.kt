@@ -864,6 +864,11 @@ class TnaRepository(
             put("kind", "text")
             replyTo?.let { put("reply_to", it.toString()) }
         }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
+    }
+
+    /// Best-effort push for a delivered message. Kept out of sendText: the edge
+    /// function can take seconds, and the bubble must not wait for it.
+    suspend fun notifyMessage(messageId: UUID) {
         runCatching {
             api.function("notify-message", buildJsonObject { put("message_id", messageId.toString()) }.toString())
         }
