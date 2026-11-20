@@ -45,6 +45,8 @@ sealed interface Sheet {
 
 class AppModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("tna.ui", Context.MODE_PRIVATE)
+    /** Packing checklist ticks, per trip, on the device (0173). */
+    val checklist = TripChecklist(PrefsStringSetStore(app, "tna.checklist"))
     val network = NetworkMonitor(app)
     val account = AccountStore(app)
     private val auth = AuthSession(app, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY)
@@ -1136,6 +1138,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         passport = PassportData.empty
         recap = null
         tripPlan = null
+        checklist.clear()
         threads = emptyList()
         loadChats()
     }

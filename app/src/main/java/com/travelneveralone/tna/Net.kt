@@ -726,6 +726,8 @@ object Mappers {
                 else images.firstOrNull()?.let { photoFocus[it] } ?: ImageFocus.Center,
             photoFocus = photoFocus,
             videoUrl = obj.str("video_url")?.takeIf { it.isNotEmpty() },
+            // Absent before 0173 and in older cached payloads.
+            packingList = obj["packing_list"]?.arrayOrEmpty()?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
         )
     }
 

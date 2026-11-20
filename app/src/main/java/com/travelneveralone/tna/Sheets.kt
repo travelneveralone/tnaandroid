@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
@@ -1293,6 +1295,43 @@ fun ProgramSheet(app: AppModel, tour: Tour, trip: Trip? = null) {
                     DayCard(day, color, expanded.contains(day.id), date?.let { format.format(it) }, isToday = date == today) {
                         expanded = if (expanded.contains(day.id)) expanded - day.id else expanded + day.id
                     }
+                }
+            }
+        }
+        if (tour.packingList.isNotEmpty()) {
+            // Ticks are stored per departure; without one (a tour preview) - per tour.
+            PackingChecklist(app, (trip?.id ?: tour.backendId ?: tour.id).toString(), tour.packingList)
+        }
+    }
+}
+
+/// «Что взять с собой» (0173): tap to tick, kept on the phone, works offline.
+@Composable
+private fun PackingChecklist(app: AppModel, scope: String, items: List<String>) {
+    var packed by remember(scope, items) { mutableStateOf(app.checklist.done(scope, items)) }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Чек-лист", "${packed.size}/${items.size}")
+        Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.forEach { item ->
+                val done = packed.contains(item)
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.surface)
+                        .pressable(0.98f) {
+                            packed = if (done) packed - item else packed + item
+                            app.checklist.setDone(scope, packed)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        if (done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null,
+                        tint = if (done) Color.hex(0x9CFF57) else TnaColor.subtle, modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        item, color = if (done) TnaColor.subtle else TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        textDecoration = if (done) TextDecoration.LineThrough else null, modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }

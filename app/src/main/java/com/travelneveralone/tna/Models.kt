@@ -70,6 +70,8 @@ data class Tour(
     val videoUrl: String? = null,
     var salePriceFrom: Int? = null,
     var saleLabel: String? = null,
+    /** «Что взять с собой» (tours.packing_list, 0173): the trip checklist. Empty hides the section. */
+    val packingList: List<String> = emptyList(),
 ) {
     val heroImages: List<String> get() = images.ifEmpty { listOfNotNull(imageUrl) }
 

@@ -17,12 +17,13 @@ object Mock {
         days: Int, km: Int, price: Int, difficulty: Int, altitude: Int, symbol: String,
         colors: List<Long>, departures: List<Pair<String, Int>>, program: List<DayPlan>,
         includes: List<String>,
+        packingList: List<String> = emptyList(),
     ) = Tour(
         name = name, tagline = tagline, hashtag = hashtag, region = region,
         days = days, km = km, priceFrom = price, difficulty = difficulty, maxAltitude = altitude,
         symbol = symbol, colors = colors,
         departures = departures.map { Departure(label = it.first, spotsLeft = it.second) },
-        program = program, includes = includes,
+        program = program, includes = includes, packingList = packingList,
     )
 
     val tours: List<Tour> = listOf(
@@ -38,6 +39,9 @@ object Mock {
                 DayPlan(day = 5, title = "Вертолёт в Долину гейзеров", details = "Опционально: полёт над вулканами, кальдера Узон."),
             ),
             listOf("Проживание", "Трансферы 4×4", "Гид-вулканолог", "Питание на маршрутах", "Страховка"),
+            // Mirrors seed.sql (0173).
+            packingList = listOf("Треккинговые ботинки", "Мембранная куртка", "Термобельё",
+                "Пауэрбанк 20 000 mAh", "Наличные (на Камчатке связь не везде)"),
         ),
         tour(
             "Байкал", "Самый большой каток мира", "#TNA_байкал", TourRegion.Russia,

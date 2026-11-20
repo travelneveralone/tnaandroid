@@ -27,7 +27,7 @@ class TnaRepository(
         val today = Dates.todayUtc().toString()
         val columns = "id,slug,name,tagline,hashtag,region,days,km,price_from," +
             "difficulty,max_altitude,symbol,color_start,color_end,image_url,image_focus_x,image_focus_y," +
-            "video_url,includes," +
+            "video_url,includes,packing_list," +
             "tour_days(day_number,title,details),departures(id,label,spots_left,starts_on,ends_on,tag)," +
             "tour_images(url,sort,focus_x,focus_y)"
         val raw = api.get("tours", listOf(
