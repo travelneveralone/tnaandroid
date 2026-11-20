@@ -676,9 +676,14 @@ fun displayTime(raw: String?): String {
 
 object Mappers {
     fun tour(obj: JsonObject): Tour {
-        val images = obj["tour_images"]?.arrayOrEmpty()?.mapNotNull { el ->
-            el.jsonObjectOrNull()?.let { it.str("url") to (it.int("sort") ?: 0) }
-        }?.sortedBy { it.second }?.mapNotNull { it.first }.orEmpty()
+        val imageRows = obj["tour_images"]?.arrayOrEmpty()?.mapNotNull { it.jsonObjectOrNull() }
+            ?.sortedBy { it.int("sort") ?: 0 }.orEmpty()
+        val images = imageRows.mapNotNull { it.str("url") }
+        // Payloads cached before 0169 have no focus: centre.
+        val photoFocus = imageRows.mapNotNull { row ->
+            row.str("url")?.let { it to ImageFocus.of(row.dbl("focus_x"), row.dbl("focus_y")) }
+        }.toMap()
+        val cover = obj.str("image_url")
         val days = obj["tour_days"]?.arrayOrEmpty()?.mapNotNull { el ->
             val day = el.jsonObjectOrNull() ?: return@mapNotNull null
             DayPlan(day = day.int("day_number") ?: 0, title = day.str("title").orEmpty(), details = day.str("details").orEmpty())
@@ -715,8 +720,11 @@ object Mappers {
             program = days,
             includes = obj["includes"]?.arrayOrEmpty()?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
             backendId = id,
-            imageUrl = obj.str("image_url") ?: images.firstOrNull(),
+            imageUrl = cover ?: images.firstOrNull(),
             images = images,
+            imageFocus = if (cover != null) ImageFocus.of(obj.dbl("image_focus_x"), obj.dbl("image_focus_y"))
+                else images.firstOrNull()?.let { photoFocus[it] } ?: ImageFocus.Center,
+            photoFocus = photoFocus,
             videoUrl = obj.str("video_url")?.takeIf { it.isNotEmpty() },
         )
     }

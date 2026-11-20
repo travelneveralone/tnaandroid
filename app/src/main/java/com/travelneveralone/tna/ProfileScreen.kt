@@ -318,7 +318,7 @@ private fun TripsBlock(app: AppModel) {
                 Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(220.dp).clip(shape)
                     .border(1.dp, Color.White.copy(alpha = 0.1f), shape).pressable(0.98f) { app.openProgram(next) },
             ) {
-                TourCover(next.imageUrl, next.colors, Modifier.matchParentSize())
+                TourCover(next.imageUrl, next.colors, Modifier.matchParentSize(), focus = next.imageFocus)
                 if (next.imageUrl == null) SymbolWatermark(next.symbol, 120, 110, -60, -10f, 0.13f)
                 Column(Modifier.fillMaxSize().padding(18.dp)) {
                     Text(

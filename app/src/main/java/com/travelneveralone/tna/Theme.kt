@@ -419,11 +419,21 @@ fun TourGradient(colors: List<Long>, modifier: Modifier = Modifier, content: @Co
 }
 
 /// iOS `TourCover`: gradient base, photo on top (gradient shows while it loads), scrim under text.
+/// The photo is cropped around the manager's focus point (TNA-57), not the centre.
 @Composable
-fun TourCover(imageUrl: String?, colors: List<Long>, modifier: Modifier = Modifier, scrim: Boolean = true) {
+fun TourCover(
+    imageUrl: String?,
+    colors: List<Long>,
+    modifier: Modifier = Modifier,
+    scrim: Boolean = true,
+    focus: ImageFocus = ImageFocus.Center,
+) {
     TourGradient(colors, modifier) {
         if (imageUrl != null) {
-            AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            AsyncImage(
+                model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop,
+                alignment = focus.alignment, modifier = Modifier.matchParentSize(),
+            )
             if (scrim) {
                 Box(
                     Modifier.matchParentSize().background(

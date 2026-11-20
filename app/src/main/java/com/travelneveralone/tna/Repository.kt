@@ -26,9 +26,10 @@ class TnaRepository(
     suspend fun fetchTours(): List<Tour> {
         val today = Dates.todayUtc().toString()
         val columns = "id,slug,name,tagline,hashtag,region,days,km,price_from," +
-            "difficulty,max_altitude,symbol,color_start,color_end,image_url,video_url,includes," +
+            "difficulty,max_altitude,symbol,color_start,color_end,image_url,image_focus_x,image_focus_y," +
+            "video_url,includes," +
             "tour_days(day_number,title,details),departures(id,label,spots_left,starts_on,ends_on,tag)," +
-            "tour_images(url,sort)"
+            "tour_images(url,sort,focus_x,focus_y)"
         val raw = api.get("tours", listOf(
             "select" to columns,
             "is_active" to "eq.true",
@@ -256,6 +257,7 @@ class TnaRepository(
                 role = row.str("role_in_trip") ?: row.str("role").orEmpty(),
                 chatId = row.str("chat_id")?.let(UUID::fromString),
                 imageUrl = row.str("image_url"),
+                imageFocus = ImageFocus.of(row.dbl("image_focus_x"), row.dbl("image_focus_y")),
             )
         }
     }

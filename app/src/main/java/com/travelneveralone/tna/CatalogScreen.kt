@@ -274,7 +274,7 @@ fun FeaturedCard(tour: Tour, campaign: CampaignOffer?, videoFile: java.io.File? 
             .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
             .pressable(0.97f, onClick = onClick),
     ) {
-        TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize())
+        TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize(), focus = tour.imageFocus)
         if (videoFile != null) {
             LoopingVideo(videoFile, mayPlay, Modifier.matchParentSize())
             // Same bottom scrim as the photo cover, so text stays readable over the clip.
@@ -320,7 +320,7 @@ fun SmallTourCard(tour: Tour, campaign: CampaignOffer?, onClick: () -> Unit) {
             .border(1.dp, Color.White.copy(alpha = 0.1f), shape)
             .pressable(0.97f, onClick = onClick),
     ) {
-        TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize())
+        TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize(), focus = tour.imageFocus)
         if (tour.imageUrl == null) SymbolWatermark(tour.symbol, 90, 40, -55, -10f, 0.13f)
         if (plate != null) {
             SalePlateView(plate, featured = false)

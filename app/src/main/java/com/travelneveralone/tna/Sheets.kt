@@ -1089,7 +1089,7 @@ fun CompassSheet(app: AppModel) {
             }
             Text("ТВОЙ ТУР", style = displayStyle(30), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             Box(Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(26.dp)).pressable(0.98f) { open(best.tour) }) {
-                TourCover(best.tour.imageUrl, best.tour.colors, Modifier.matchParentSize())
+                TourCover(best.tour.imageUrl, best.tour.colors, Modifier.matchParentSize(), focus = best.tour.imageFocus)
                 if (best.tour.imageUrl == null) SymbolWatermark(best.tour.symbol, 130, 90, -60, -12f, 0.13f)
                 Column(Modifier.align(Alignment.BottomStart).padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("совпадение ${best.percent}%", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
@@ -1244,7 +1244,7 @@ fun ProgramSheet(app: AppModel, tour: Tour, trip: Trip? = null) {
     val context = LocalContext.current
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Box(Modifier.fillMaxWidth().height(240.dp)) {
-            TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize())
+            TourCover(tour.imageUrl, tour.colors, Modifier.matchParentSize(), focus = tour.imageFocus)
             if (tour.imageUrl == null) SymbolWatermark(tour.symbol, 150, 80, -60, -10f)
             Column(Modifier.align(Alignment.BottomStart).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tour.name.uppercase(), style = displayStyle(40, Color.White), maxLines = 2)

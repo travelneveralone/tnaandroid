@@ -63,11 +63,18 @@ data class Tour(
     val backendId: UUID? = null,
     val imageUrl: String? = null,
     val images: List<String> = emptyList(),
+    /** Focus point of the cover ([imageUrl]) - the crop keeps it in frame (TNA-57). */
+    val imageFocus: ImageFocus = ImageFocus.Center,
+    /** Focus point of each gallery photo; a photo missing here is cropped around the centre. */
+    val photoFocus: Map<String, ImageFocus> = emptyMap(),
     val videoUrl: String? = null,
     var salePriceFrom: Int? = null,
     var saleLabel: String? = null,
 ) {
     val heroImages: List<String> get() = images.ifEmpty { listOfNotNull(imageUrl) }
+
+    /** Where to crop [url]: its own gallery focus, else the cover focus when it is the cover, else the centre. */
+    fun focusFor(url: String): ImageFocus = photoFocus[url] ?: if (url == imageUrl) imageFocus else ImageFocus.Center
     val displayPrice: Int get() = salePriceFrom ?: priceFrom
     val priceText: String get() = "от ${Money.grouped(displayPrice)} ₽"
     val basePriceText: String get() = "от ${Money.grouped(priceFrom)} ₽"
@@ -103,6 +110,8 @@ data class Trip(
     val role: String,
     val chatId: UUID?,
     val imageUrl: String? = null,
+    /** Focus point of that cover (TNA-57). */
+    val imageFocus: ImageFocus = ImageFocus.Center,
 ) {
     val isUpcoming: Boolean get() = endsOn?.let { !it.isBefore(Dates.todayUtc()) } ?: true
     val isRunning: Boolean

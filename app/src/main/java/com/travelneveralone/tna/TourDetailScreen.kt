@@ -244,7 +244,7 @@ private fun Hero(tour: Tour, scrollY: Int) {
     Box(Modifier.fillMaxWidth().height(420.dp).clipToBounds()) {
         // Light parallax: the photo moves slower than the page.
         Box(Modifier.matchParentSize().graphicsLayer { translationY = scrollY * 0.4f }) {
-            HeroCarousel(images, tour.colors)
+            HeroCarousel(images, tour.colors, tour::focusFor)
             if (images.isEmpty()) SymbolWatermark(tour.symbol, 230, 90, -130, -12f, 0.13f)
         }
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -256,10 +256,13 @@ private fun Hero(tour: Tour, scrollY: Int) {
 
 /// Swipeable photos with auto-advance every 4 s and page dots (iOS TourHeroCarousel).
 @Composable
-private fun HeroCarousel(images: List<String>, colors: List<Long>) {
+private fun HeroCarousel(images: List<String>, colors: List<Long>, focus: (String) -> ImageFocus = { ImageFocus.Center }) {
     TourGradient(colors, Modifier.fillMaxSize()) {
         if (images.size == 1) {
-            AsyncImage(model = images[0], contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            AsyncImage(
+                model = images[0], contentDescription = null, contentScale = ContentScale.Crop,
+                alignment = focus(images[0]).alignment, modifier = Modifier.matchParentSize(),
+            )
         } else if (images.size > 1) {
             // A long virtual strip so the loop never hits an edge.
             val loops = 1000
@@ -276,6 +279,7 @@ private fun HeroCarousel(images: List<String>, colors: List<Long>) {
                     model = images[page % images.size],
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    alignment = focus(images[page % images.size]).alignment,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
