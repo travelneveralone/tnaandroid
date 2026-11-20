@@ -445,6 +445,8 @@ private fun PromoCard(app: AppModel) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("Другу 6 000 ₽ на первую поездку, тебе 6 000 ₽ когда он вернётся. Дальше ему 5 000 ₽, тебе 3 000 ₽", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Text(code.ifBlank { "…" }, style = displayStyle(26))
+                    // The friend's code only applies to a first-ever trip (backend answers 'existing').
+                    Text("Код сработает у друга, который ещё не ездил с TNA", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
                 Icon(
                     if (copied) Icons.Filled.CheckCircle else Icons.Filled.ContentCopy,
