@@ -56,6 +56,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         token = { auth.token() },
         cache = DiskCache(app.cacheDir),
         online = { network.isOnline },
+        user = { auth.userId },
     )
     val repo = TnaRepository(api, auth)
 
@@ -102,6 +103,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var search by mutableStateOf("")
 
     var openTour by mutableStateOf<Tour?>(null)
+    /// Set by an SMS sign-in of a customer from the old base (TNACloud 0176);
+    /// the login sheet's last step says «С возвращением».
+    var welcome by mutableStateOf<ReturningCustomer?>(null)
     var sheet by mutableStateOf<Sheet?>(null)
     var openChat by mutableStateOf<ChatThread?>(null)
     var threads by mutableStateOf<List<ChatThread>>(emptyList())
@@ -1110,9 +1114,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (loginBusy) return
         loginBusy = true
         loginError = null
+        welcome = null
         viewModelScope.launch {
             runCatching { auth.verify(loginPhone, loginCode) }
                 .onSuccess {
+                    // A customer from the old base: greet by name, trips are already in the passport.
+                    welcome = repo.welcome()
+                    welcome?.let { account.name = it.name }
                     // The code is used up; a later sign-in needs a new one.
                     codeCooldown.forgetLiveCode()
                     account.isRegistered = true
@@ -1154,6 +1162,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         codeCooldown.forgetLiveCode()
         val keptPhone = account.phone
         auth.signOut(keepForQuickSignIn = keepQuickSignIn && account.isRegistered)
+        // The next person on this phone must not see this one's answers.
+        api.clearCache()
+        welcome = null
         canQuickSignIn = auth.hasQuickSignIn
         account.quickPhone = if (canQuickSignIn) keptPhone else ""
         appLock.reset()

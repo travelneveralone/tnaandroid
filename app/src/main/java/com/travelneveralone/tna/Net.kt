@@ -103,6 +103,11 @@ class DiskCache(dir: File) {
         runCatching { file(key).writeText(body) }
     }
 
+    /// Sign-out: nothing the previous person saw stays on the device.
+    fun clear() {
+        root.listFiles()?.forEach { runCatching { it.delete() } }
+    }
+
     private fun file(key: String): File {
         val hash = MessageDigest.getInstance("SHA-256").digest(key.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -110,12 +115,27 @@ class DiskCache(dir: File) {
     }
 }
 
+/// Cached answers belong to one account: on a shared phone (testers switch
+/// accounts all day) another person's role, trips or chats must never come
+/// back from the cache (TNA-75, TNA-81, TNA-87). iOS drops its caches on a
+/// sign-in into another account (`discardUserCaches`).
+fun postgrestCacheKey(method: String, url: String, body: String?, user: String?): String =
+    "${user ?: "-"} $method $url ${body.orEmpty()}"
+
+/// Which answers may be cached at all: reads, and RPCs the caller marked as
+/// read-only by passing a TTL. A write RPC must never answer from the cache -
+/// a failed `join_waitlist` would otherwise "succeed" with an old reply.
+fun postgrestCaches(method: String, path: String, ttlSec: Int?): Boolean =
+    method == "GET" || (path.contains("/rpc/") && ttlSec != null)
+
 class Postgrest(
     private val baseUrl: String,
     private val anonKey: String,
     private val token: suspend () -> String?,
     private val cache: DiskCache,
     private val online: () -> Boolean,
+    /// Current account id: scopes the cache (see [postgrestCacheKey]).
+    private val user: () -> String? = { null },
 ) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -129,6 +149,8 @@ class Postgrest(
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val isOffline: Boolean get() = !online()
+
+    fun clearCache() = cache.clear()
 
     suspend fun get(table: String, query: List<Pair<String, String>>, ttlSec: Int?): String =
         call("GET", "rest/v1/$table", query, null, ttlSec)
@@ -230,8 +252,9 @@ class Postgrest(
                 })
             }
         }
-        val cacheKey = "$method $url ${body.orEmpty()}"
-        if (method == "GET" || path.contains("/rpc/")) {
+        val cacheKey = postgrestCacheKey(method, url, body, user())
+        val cached = postgrestCaches(method, path, ttlSec)
+        if (cached) {
             if (!online()) {
                 cache.readStale(cacheKey)?.let { return@withContext it }
                 if (!online()) throw TnaException("Нет соединения с интернетом")
@@ -241,18 +264,19 @@ class Postgrest(
             // the saved copy. The request is not cancelled, it still refreshes the cache.
             if (ttlSec != null) {
                 cache.readStale(cacheKey)?.let { stale ->
-                    val pending = background.async { send(method, url, cacheKey, body, prefer) }
+                    val pending = background.async { send(method, url, cacheKey, cached, body, prefer) }
                     return@withContext withTimeoutOrNull(CACHE_FALLBACK_WAIT_MS) { pending.await() } ?: stale
                 }
             }
         }
-        send(method, url, cacheKey, body, prefer)
+        send(method, url, cacheKey, cached, body, prefer)
     }
 
     private suspend fun send(
         method: String,
         url: String,
         cacheKey: String,
+        cached: Boolean,
         body: String?,
         prefer: String?,
     ): String = withContext(Dispatchers.IO) {
@@ -272,18 +296,18 @@ class Postgrest(
             http.newCall(request).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    if (method == "GET" || url.contains("/rpc/")) {
+                    if (cached) {
                         cache.readStale(cacheKey)?.let { return@withContext it }
                     }
                     throw TnaException("Сервер ответил ${response.code}. Запрос не прошёл - можно повторить")
                 }
-                if (method == "GET" || url.contains("/rpc/")) cache.write(cacheKey, text)
+                if (cached) cache.write(cacheKey, text)
                 text
             }
         } catch (error: TnaException) {
             throw error
         } catch (error: Exception) {
-            if (method == "GET" || url.contains("/rpc/")) {
+            if (cached) {
                 cache.readStale(cacheKey)?.let { return@withContext it }
             }
             throw TnaException(error.message ?: "Нет соединения с интернетом")

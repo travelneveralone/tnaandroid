@@ -19,6 +19,10 @@ import java.util.UUID
 
 private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+/// Read-only RPC: always asks the server, falls back to this account's last
+/// answer offline or on a slow link. Write RPCs pass no TTL and are never cached.
+private const val READ_FRESH = 0
+
 class TnaRepository(
     private val api: Postgrest,
     private val auth: AuthSession,
@@ -264,7 +268,7 @@ class TnaRepository(
 
     /// Tours this user asked to hear about when dates open (0077).
     suspend fun subscribedTourIds(): Set<UUID> = runCatching {
-        json.parseToJsonElement(api.rpc("my_tour_subscriptions")).arrayOrEmpty()
+        json.parseToJsonElement(api.rpc("my_tour_subscriptions", ttlSec = READ_FRESH)).arrayOrEmpty()
             .mapNotNull { it.jsonPrimitiveOrNull()?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() } }
             .toSet()
     }.getOrDefault(emptySet())
@@ -280,7 +284,7 @@ class TnaRepository(
     /// Ended departures this traveller was on. Not cached on purpose: a cached
     /// "you may review" survives the review and offers a form the DB then rejects.
     suspend fun reviewableTrips(): List<ReviewableTrip> {
-        val raw = api.rpc("my_reviewable_trips")
+        val raw = api.rpc("my_reviewable_trips", ttlSec = READ_FRESH)
         return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
             ReviewableTrip(
@@ -311,19 +315,28 @@ class TnaRepository(
         api.upload("review-media", "${UUID.randomUUID()}.jpg", compressJpeg(bytes), "image/jpeg")
     }.getOrNull()
 
+    /// «С возвращением» after an SMS sign-in (TNACloud 0176): the number was just
+    /// linked to a customer card that already has trips. Never blocks a sign-in.
+    suspend fun welcome(): ReturningCustomer? = runCatching {
+        val raw = api.rpc("my_welcome").trim()
+        if (raw.isEmpty() || raw == "null") return@runCatching null
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
+        ReturningCustomer.from(obj.str("name"), obj.int("trips"))
+    }.getOrNull()
+
     suspend fun myRole(): String = runCatching {
-        api.rpc("my_role").trim().trim('"')
+        api.rpc("my_role", ttlSec = READ_FRESH).trim().trim('"')
     }.getOrDefault("client")
 
     suspend fun myDmRoles(): List<String>? = runCatching {
-        val raw = api.rpc("my_dm_roles")
+        val raw = api.rpc("my_dm_roles", ttlSec = READ_FRESH)
         json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
     }.getOrNull()
 
-    suspend fun myCode(): String? = runCatching { api.rpc("my_referral_code").trim().trim('"').ifBlank { null } }.getOrNull()
+    suspend fun myCode(): String? = runCatching { api.rpc("my_referral_code", ttlSec = READ_FRESH).trim().trim('"').ifBlank { null } }.getOrNull()
 
     suspend fun bonusSummary(): BonusSummary? = runCatching {
-        val obj = json.parseToJsonElement(api.rpc("my_bonus_summary")).jsonObjectOrNull() ?: return null
+        val obj = json.parseToJsonElement(api.rpc("my_bonus_summary", ttlSec = READ_FRESH)).jsonObjectOrNull() ?: return null
         BonusSummary(
             available = obj.int("available") ?: 0,
             pending = obj.int("pending") ?: 0,
@@ -447,7 +460,7 @@ class TnaRepository(
 
     /// Guide / curator / manager of this trip chat: may pin and create polls.
     suspend fun chatParticipants(chatId: UUID): List<ChatParticipant> = runCatching {
-        val raw = api.rpc("chat_participants", buildJsonObject { put("p_chat", chatId.toString()) }.toString())
+        val raw = api.rpc("chat_participants", buildJsonObject { put("p_chat", chatId.toString()) }.toString(), ttlSec = READ_FRESH)
         json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
             val id = row.str("user_id")?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return@mapNotNull null
@@ -473,12 +486,12 @@ class TnaRepository(
 
     /// Team (guide, curator, manager, admin) may remove travellers from this trip chat (0157).
     suspend fun canBlockInChat(chatId: UUID): Boolean = runCatching {
-        api.rpc("can_block_in_chat", buildJsonObject { put("p_chat", chatId.toString()) }.toString()).trim() == "true"
+        api.rpc("can_block_in_chat", buildJsonObject { put("p_chat", chatId.toString()) }.toString(), ttlSec = READ_FRESH).trim() == "true"
     }.getOrDefault(false)
 
     /// People the team removed from this chat; empty unless the caller may block here.
     suspend fun blockedMembers(chatId: UUID): List<ChatParticipant> = runCatching {
-        val raw = api.rpc("chat_blocked_members", buildJsonObject { put("p_chat", chatId.toString()) }.toString())
+        val raw = api.rpc("chat_blocked_members", buildJsonObject { put("p_chat", chatId.toString()) }.toString(), ttlSec = READ_FRESH)
         json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             val row = el.jsonObjectOrNull() ?: return@mapNotNull null
             val id = row.str("user_id")?.let { runCatching { UUID.fromString(it) }.getOrNull() } ?: return@mapNotNull null
@@ -506,7 +519,7 @@ class TnaRepository(
     /// Short privacy-safe card of another user (header of a 1:1 chat).
     suspend fun miniProfile(userId: UUID): MiniProfile? = runCatching {
         val obj = json.parseToJsonElement(
-            api.rpc("chat_mini_profile", buildJsonObject { put("p_user", userId.toString()) }.toString()),
+            api.rpc("chat_mini_profile", buildJsonObject { put("p_user", userId.toString()) }.toString(), ttlSec = READ_FRESH),
         ).jsonObjectOrNull() ?: return@runCatching null
         MiniProfile(userId, obj.str("name").orEmpty(), obj.str("city").orEmpty(), obj.str("role") ?: "client", obj.str("avatar"))
     }.getOrNull()
@@ -530,7 +543,7 @@ class TnaRepository(
     }.getOrDefault(emptySet())
 
     suspend fun isChatStaff(chatId: UUID): Boolean = runCatching {
-        api.rpc("is_chat_staff", buildJsonObject { put("p_chat", chatId.toString()) }.toString()).trim() == "true"
+        api.rpc("is_chat_staff", buildJsonObject { put("p_chat", chatId.toString()) }.toString(), ttlSec = READ_FRESH).trim() == "true"
     }.getOrDefault(false)
 
     suspend fun setPinned(messageId: UUID, pinned: Boolean) {
@@ -639,7 +652,7 @@ class TnaRepository(
     }
 
     suspend fun pollState(messageId: UUID): PollState? = runCatching {
-        val raw = api.rpc("poll_state", buildJsonObject { put("p_message", messageId.toString()) }.toString())
+        val raw = api.rpc("poll_state", buildJsonObject { put("p_message", messageId.toString()) }.toString(), ttlSec = READ_FRESH)
         val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
         PollState(
             total = obj.int("total") ?: 0,
@@ -975,7 +988,7 @@ class TnaRepository(
     }
 
     suspend fun myCountries(): Map<String, CountryStatus> {
-        val raw = runCatching { api.rpc("my_countries") }.getOrNull() ?: return emptyMap()
+        val raw = runCatching { api.rpc("my_countries", ttlSec = READ_FRESH) }.getOrNull() ?: return emptyMap()
         val map = mutableMapOf<String, CountryStatus>()
         json.parseToJsonElement(raw).arrayOrEmpty().forEach { el ->
             val row = el.jsonObjectOrNull() ?: return@forEach
@@ -1000,7 +1013,7 @@ class TnaRepository(
     }
 
     suspend fun fetchProfile(): ProfileDraft {
-        val obj = json.parseToJsonElement(api.rpc("my_profile")).jsonObjectOrNull() ?: return ProfileDraft()
+        val obj = json.parseToJsonElement(api.rpc("my_profile", ttlSec = READ_FRESH)).jsonObjectOrNull() ?: return ProfileDraft()
         return ProfileDraft(
             lastName = obj.str("last_name").orEmpty(),
             firstName = obj.str("first_name").orEmpty(),

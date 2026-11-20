@@ -269,7 +269,17 @@ data class BookingSummary(
     val moneyNote: String? get() = BonusCopy.bookingNote(codeDiscount, bonusSpent)
 }
 
-data class ReturningCustomer(val name: String, val tripsCount: Int)
+data class ReturningCustomer(val name: String, val tripsCount: Int) {
+    companion object {
+        /// What `my_welcome()` (TNACloud 0176) answered: a greeting needs a name
+        /// and at least one trip, anything else is a new person (iOS twin).
+        fun from(name: String?, trips: Int?): ReturningCustomer? {
+            val clean = name.orEmpty().trim()
+            if (clean.isEmpty() || trips == null || trips <= 0) return null
+            return ReturningCustomer(clean, trips)
+        }
+    }
+}
 
 data class Achievement(
     val id: UUID = UUID.randomUUID(),

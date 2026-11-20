@@ -149,7 +149,14 @@ fun LoginSheet(app: AppModel) {
         LaunchedEffect(Unit) { delay(5000); app.sheet = null }
         SheetColumn {
             Text("ГОТОВО", style = displayStyle(34))
-            Text("Добро пожаловать в TNA! Теперь брони и чат сохранятся за тобой.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            // A customer from the old base is greeted by name (iOS LoginView doneStep).
+            val back = app.welcome
+            if (back != null) {
+                Text("С возвращением, ${back.name}! 🎒", style = displayStyle(24))
+                Text("Нашли ${back.tripsCount} твоих поездок с TNA - они уже в паспорте.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            } else {
+                Text("Добро пожаловать в TNA! Теперь брони и чат сохранятся за тобой.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
             PrimaryButton("Отлично") { app.sheet = null }
         }
         return
