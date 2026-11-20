@@ -191,6 +191,7 @@ fun LoginSheet(app: AppModel) {
             Text("ВХОД", style = displayStyle(34))
             Text(
                 if (app.loginStep == 0) "Номер нужен, чтобы сохранять брони и находить твои прошлые поездки"
+                else if (app.loginCodeReused) "Код на этот номер уже отправлен, новый не нужен"
                 else "Отправили код на ${PhoneNumber.pretty(app.loginPhone)}",
                 color = TnaColor.subtle,
                 fontSize = 14.sp,
@@ -217,15 +218,10 @@ fun LoginSheet(app: AppModel) {
                 }
             }
             val complete = PhoneInput.isComplete(app.loginNational, app.loginCountry)
-            val live = complete && app.codeCooldown.hasLiveCode(app.loginPhone, now)
-            val wait = if (complete) app.codeCooldown.secondsUntilNewCode(app.loginPhone, now) else 0L
+            // A live code for this number keeps «Получить код» pressable: it
+            // reuses that code (no SMS) and the code step says so.
+            val wait = if (complete) app.codeCooldown.secondsUntilCodeStep(app.loginPhone, now) else 0L
             when {
-                // Back from «Изменить номер» with the same number: its code is
-                // still good, a second SMS would only cost money.
-                live -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("Ввести код", icon = Icons.AutoMirrored.Filled.ArrowForward) { app.requestCode() }
-                    Text("Код на этот номер уже отправлен, новый не нужен", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
                 wait > 0 -> PrimaryButton(
                     "Повторная отправка через ${CodeCooldown.countdown(wait)}",
                     enabled = false,

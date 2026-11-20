@@ -138,6 +138,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var loginStep by mutableStateOf(0)
     var loginError by mutableStateOf<String?>(null)
     var loginBusy by mutableStateOf(false)
+    /// The code step shows a code sent earlier (no new SMS went out).
+    var loginCodeReused by mutableStateOf(false)
     /** Paces login codes (every one is a paid SMS): the resend countdown and
      *  reusing a code still alive. Here, not in the sheet, so closing and
      *  reopening the sheet does not reset it (iOS `AccountStore.codeCooldown`). */
@@ -1013,7 +1015,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         // Back from «Изменить номер» with the same number while its code is
         // still good: straight to typing it, a second SMS would only cost money.
         if (!forceNew && codeCooldown.hasLiveCode(phone, now)) {
-            openCodeStep()
+            openCodeStep(reused = true)
             return
         }
         // Inside the server's pause the sheet counts down; nothing to send yet.
@@ -1038,9 +1040,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     /// The code step for the number on screen, with an empty field (beta's
-    /// canned numbers get their known code).
-    private fun openCodeStep() {
+    /// canned numbers get their known code). [reused]: no SMS went out, the
+    /// code sent earlier still works and the sheet says so.
+    private fun openCodeStep(reused: Boolean = false) {
         loginError = null
+        loginCodeReused = reused
         loginCode = testLoginFor(loginPhone)?.code.orEmpty()
         loginStep = 1
     }

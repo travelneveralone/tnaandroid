@@ -58,6 +58,12 @@ class CodeCooldown {
         return nowMs - lastAt < CODE_LIFETIME_SECONDS * 1000
     }
 
+    /// Seconds until «Получить код» can do anything for this number; 0 = now.
+    /// A live code makes it 0 even inside the resend pause: the button then
+    /// reuses that code (no SMS), so it must stay pressable.
+    fun secondsUntilCodeStep(phone: String, nowMs: Long): Long =
+        if (hasLiveCode(phone, nowMs)) 0 else secondsUntilNewCode(phone, nowMs)
+
     /// The code was used, or it belonged to a session that is gone.
     fun forgetLiveCode() {
         lastPhone = null

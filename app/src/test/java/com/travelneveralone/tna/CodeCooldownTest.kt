@@ -35,6 +35,16 @@ class CodeCooldownTest {
         assertEquals(50L, c.secondsUntilNewCode("79161234567", t0 + 10_000))
     }
 
+    @Test fun liveCodeKeepsGetCodePressableInsideThePause() {
+        val c = CodeCooldown()
+        c.recordSent(phone, t0)
+        assertEquals(0L, c.secondsUntilCodeStep(phone, t0 + 10_000))
+        c.recordRefusal("+79160000000", 40, t0)
+        assertEquals(30L, c.secondsUntilCodeStep("+79160000000", t0 + 10_000))
+        c.forgetLiveCode()
+        assertEquals(50L, c.secondsUntilCodeStep(phone, t0 + 10_000))
+    }
+
     @Test fun codeStaysUsableForItsLifetimeOnly() {
         val c = CodeCooldown()
         c.recordSent(phone, t0)
