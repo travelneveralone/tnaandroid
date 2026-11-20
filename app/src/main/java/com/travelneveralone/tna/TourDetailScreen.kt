@@ -248,7 +248,7 @@ private fun Hero(tour: Tour, scrollY: Int) {
             if (images.isEmpty()) SymbolWatermark(tour.symbol, 230, 90, -130, -12f, 0.13f)
         }
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(tour.name.uppercase(), style = displayStyle(56, Color.White), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tour.name.uppercase(), style = displayStyle(56, Color.White), maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (tour.tagline.isNotBlank()) Text(tour.tagline, color = Color.White.copy(alpha = 0.9f), fontSize = 17.sp, fontWeight = FontWeight.Medium)
         }
     }
@@ -679,8 +679,9 @@ private fun BookingBar(tour: Tour, customDates: Boolean, member: Boolean, soldOu
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 SalePriceLabel(tour, prominent = true)
-                Text("предоплата 20%", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("предоплата 20%", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
+            Spacer(Modifier.width(8.dp))
             val title = when {
                 customDates -> "Оставить заявку"
                 member -> "Ты в этом заезде"
@@ -694,9 +695,12 @@ private fun BookingBar(tour: Tour, customDates: Boolean, member: Boolean, soldOu
                     .clip(shape)
                     .background(if (member) androidx.compose.ui.graphics.Brush.linearGradient(listOf(TnaColor.subtle, TnaColor.subtle)) else TnaColor.accentBrush)
                     .pressable(enabled = !member, onClick = onBook)
-                    .padding(horizontal = 26.dp),
+                    .padding(horizontal = 22.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+            ) {
+                // Never break the title mid-word on narrow screens.
+                Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+            }
         }
     }
 }
