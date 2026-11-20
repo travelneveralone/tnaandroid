@@ -406,7 +406,9 @@ fun ChatMapDialog(app: AppModel, focus: Message?, authorName: (Message) -> Strin
                         Text(listOfNotNull(title, subtitle).joinToString(" · "), color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (!m.isMine) {
+                        // Directions for every point except my own running broadcast;
+                        // my one-off pin (hotel, bus) still gets them - same as iOS.
+                        if (!mineLive) {
                             MapButton(Icons.Filled.Directions, "Маршрут", filled = true, modifier = Modifier.weight(1f)) {
                                 val uri = Uri.parse("geo:${loc.lat},${loc.lng}?q=${loc.lat},${loc.lng}")
                                 runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), "Маршрут")) }
