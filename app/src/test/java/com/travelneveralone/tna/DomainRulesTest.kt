@@ -163,6 +163,29 @@ class DomainRulesTest {
         assertTrue(cert.canCheck)
     }
 
+    @Test fun ownCertificatePicks() {
+        fun c(code: String, pin: String, status: String, expires: String?) =
+            GiftCertificate(UUID.randomUUID(), code, 10_000, "", "", status, pin = pin, expiresOn = expires)
+        val all = listOf(
+            c("TNA-AAAA-0001", "1234", "paid", "2027-11-20"),
+            c("TNA-AAAA-0002", "5678", "paid", null),
+            c("TNA-AAAA-0003", "1111", "redeemed", "2027-11-20"),
+            c("TNA-AAAA-0004", "2222", "pending", "2027-11-20"),
+            c("TNA-AAAA-0005", "3333", "paid", "2026-11-19"),
+        )
+        val usable = CertificateRedemption.usable(all, LocalDate.of(2026, 11, 20))
+        assertEquals(listOf("TNA-AAAA-0001", "TNA-AAAA-0002"), usable.map { it.code })
+        val cert = CertificateRedemption()
+        cert.pick(usable[1])
+        assertEquals("TNA-AAAA-0002", cert.code)
+        assertEquals("5678", cert.pin)
+        assertTrue(cert.canCheck)
+        assertTrue(cert.isPicked(usable[1]))
+        assertFalse(cert.isPicked(usable[0]))
+        cert.updatePin("5679")
+        assertFalse(cert.isPicked(usable[1]))
+    }
+
     @Test fun albumsAndUnread() {
         val album = UUID.randomUUID()
         val messages = listOf(

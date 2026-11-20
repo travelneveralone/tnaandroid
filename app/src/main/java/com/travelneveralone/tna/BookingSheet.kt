@@ -46,6 +46,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -120,7 +122,7 @@ fun BookingSheet(app: AppModel) {
                         Text("6 000 ₽ скидкой на первую поездку. Код можно назвать и менеджеру.", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-                if (form.canUseCertificate) CertificateBox(form.cert) { app.checkCertificate(form.cert) }
+                if (form.canUseCertificate) CertificateBox(form.cert, onLoad = { app.loadMyCertificates(form.cert) }, onPick = { app.pickCertificate(form.cert, it) }) { app.checkCertificate(form.cert) }
             }
             form.errorMessage?.let { Text(it, color = TnaColor.fire, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
             Row(
@@ -466,8 +468,14 @@ private fun NavButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onC
 
 /// Collapsible certificate number + PIN, verified on the server.
 @Composable
-fun CertificateBox(cert: CertificateRedemption, onCheck: () -> Unit) {
+fun CertificateBox(
+    cert: CertificateRedemption,
+    onLoad: () -> Unit = {},
+    onPick: (GiftCertificate) -> Unit = {},
+    onCheck: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onLoad() }
     val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
     val shape = RoundedCornerShape(16.dp)
     Column(
@@ -481,6 +489,27 @@ fun CertificateBox(cert: CertificateRedemption, onCheck: () -> Unit) {
             Icon(Icons.Filled.ExpandMore, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp).rotate(chevron))
         }
         if (expanded) {
+            if (cert.mine.isNotEmpty()) {
+                Text("Твои сертификаты", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                cert.mine.forEach { mine ->
+                    val picked = cert.isPicked(mine)
+                    val pickShape = RoundedCornerShape(12.dp)
+                    Row(
+                        Modifier.fillMaxWidth().clip(pickShape)
+                            .background(if (picked) TnaColor.accent.copy(alpha = 0.12f) else TnaColor.bg)
+                            .border(1.dp, if (picked) TnaColor.accent else TnaColor.stroke, pickShape)
+                            .pressable(0.99f, enabled = !cert.isChecking) { onPick(mine) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(if (picked) Icons.Filled.CheckCircle else Icons.Filled.CardGiftcard, null, tint = TnaColor.accent, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(mine.code ?: "", color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                        Text(mine.amountText, color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+                Text("или введи номер и PIN вручную", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
             BookingField("Номер (TNA-XXXX-XXXX)", cert.code, capitalization = KeyboardCapitalization.Characters) { cert.updateCode(it) }
             BookingField("PIN", cert.pin, keyboard = KeyboardType.NumberPassword) { cert.updatePin(it) }
             val status = cert.statusText

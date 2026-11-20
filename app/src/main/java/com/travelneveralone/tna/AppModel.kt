@@ -861,6 +861,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /// Loads the person's own active certificates into the form once.
+    fun loadMyCertificates(cert: CertificateRedemption) {
+        if (cert.mine.isNotEmpty()) return
+        viewModelScope.launch {
+            val all = runCatching { repo.myCertificates() }.getOrDefault(emptyList())
+            cert.mine = CertificateRedemption.usable(all, java.time.LocalDate.now())
+        }
+    }
+
+    /// One tap on an own certificate: fill number + PIN and verify on the server.
+    fun pickCertificate(cert: CertificateRedemption, c: GiftCertificate) {
+        if (cert.isChecking) return
+        cert.pick(c)
+        checkCertificate(cert)
+    }
+
     fun checkCertificate(cert: CertificateRedemption) {
         if (!cert.canCheck) return
         cert.isChecking = true

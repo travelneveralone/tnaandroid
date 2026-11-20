@@ -749,7 +749,7 @@ fun IndividualSheet(app: AppModel) {
                 BookingField("Код друга", form.friendCode, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Characters) { form.friendCode = it }
                 Text("6 000 ₽ скидкой на первую поездку. Код можно назвать и менеджеру.", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
-            CertificateBox(form.cert) { app.checkCertificate(form.cert) }
+            CertificateBox(form.cert, onLoad = { app.loadMyCertificates(form.cert) }, onPick = { app.pickCertificate(form.cert, it) }) { app.checkCertificate(form.cert) }
         }
         form.error?.let { Text(it, color = Color.hex(0xE85C68), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
         SubmitButton("Подобрать авторский тур", busy = form.submitting, enabled = form.canSubmit) {
@@ -948,7 +948,7 @@ private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BrandMark(40, prod)
             Spacer(Modifier.weight(1f))
-            Text(if (cert.status == "paid") "АКТИВЕН" else "ЖДЁТ ОПЛАТЫ", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold,
+            Text(cert.statusTitle.uppercase(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(horizontal = 10.dp, vertical = 5.dp))
         }
         Text("ПОДАРОЧНЫЙ СЕРТИФИКАТ", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -961,8 +961,15 @@ private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
                 Text(cert.code ?: "-", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             }
             Column {
+                // Masked until tapped: the card is often on screen next to others or in a
+                // screenshot. Share/email still carry the real PIN for the recipient.
+                var pinShown by remember(cert.id) { mutableStateOf(false) }
                 Text("PIN", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(cert.pin.ifBlank { "-" }, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    if (cert.pin.isBlank()) "-" else if (pinShown) cert.pin else "••••",
+                    color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.pressable(0.95f, enabled = cert.pin.isNotBlank()) { pinShown = !pinShown },
+                )
             }
         }
         Text(listOfNotNull(cert.statusTitle, cert.expiresText).joinToString(" · "), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)

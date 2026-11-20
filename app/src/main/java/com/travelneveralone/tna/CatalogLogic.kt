@@ -282,6 +282,18 @@ class CertificateRedemption {
         result = null
     }
 
+    /// The person's own certificates usable right now - one-tap picks above the fields.
+    var mine by mutableStateOf<List<GiftCertificate>>(emptyList())
+
+    fun isPicked(c: GiftCertificate): Boolean = c.code != null && code == c.code && pin == c.pin
+
+    /// Fills number and PIN from the person's own certificate; the caller verifies it.
+    fun pick(c: GiftCertificate) {
+        code = formattedCode(c.code ?: "")
+        pin = formattedPin(c.pin)
+        result = null
+    }
+
     companion object {
         const val PREFIX = "TNA-"
         private const val BODY_LENGTH = 8
@@ -298,6 +310,13 @@ class CertificateRedemption {
         }
 
         fun formattedPin(raw: String): String = raw.filter { it.isDigit() }.take(4)
+
+        /// Paid and not expired - the only certificates worth offering in a request.
+        fun usable(all: List<GiftCertificate>, today: java.time.LocalDate): List<GiftCertificate> =
+            all.filter { c ->
+                c.status == "paid" && !c.code.isNullOrBlank() &&
+                    (Dates.parseDay(c.expiresOn)?.let { !it.isBefore(today) } ?: true)
+            }
     }
 }
 
