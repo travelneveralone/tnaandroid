@@ -7,7 +7,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,7 +28,7 @@ import coil.compose.AsyncImage
 
 /// Full-screen photo viewer (iOS `ImageViewer`): swipe between photos, ✕ to close.
 @Composable
-fun ImageViewerDialog(urls: List<String>, start: Int, onDismiss: () -> Unit) {
+fun ImageViewerDialog(urls: List<String>, start: Int, onSave: ((String) -> Unit)? = null, onDismiss: () -> Unit) {
     if (urls.isEmpty()) return
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val pager = rememberPagerState(initialPage = start.coerceIn(0, urls.lastIndex)) { urls.size }
@@ -45,6 +51,14 @@ fun ImageViewerDialog(urls: List<String>, start: Int, onDismiss: () -> Unit) {
                 )
             }
             CloseButton(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(12.dp), onDismiss)
+            // Save to the gallery, as the iOS viewer's ↓ button (chat photos, TNA-90).
+            if (onSave != null) {
+                Box(
+                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp).size(32.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f)).pressable(0.9f) { onSave(urls[pager.currentPage]) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Filled.Download, "Сохранить в галерею", tint = Color.White, modifier = Modifier.size(18.dp)) }
+            }
         }
     }
 }

@@ -733,16 +733,72 @@ fun MentionBar(matches: List<ChatParticipant>, onPick: (ChatParticipant) -> Unit
     }
 }
 
+/// Files in the chat (TNA-90, iOS `ChatFile`): what opens as a photo, the name
+/// of the local copy, and the type a photo is saved with.
+object ChatFile {
+    private val photoTypes = mapOf(
+        "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png", "heic" to "image/heic",
+        "heif" to "image/heif", "webp" to "image/webp", "gif" to "image/gif",
+    )
+
+    private fun extOf(s: String?): String {
+        val last = s.orEmpty().substringBefore('?').substringAfterLast('/')
+        return if (last.contains('.')) last.substringAfterLast('.').lowercase() else ""
+    }
+
+    /// By the shown name, else by the stored path.
+    fun ext(name: String?, url: String?): String = extOf(name).ifEmpty { extOf(url) }
+
+    fun isPhoto(name: String?, url: String?): Boolean = ext(name, url) in photoTypes
+
+    /// The type a photo goes into the gallery with; jpeg when unknown.
+    fun photoMime(name: String?, url: String?): String = photoTypes[ext(name, url)] ?: "image/jpeg"
+
+    /// The sender's file name without path parts, so the opening app shows what was sent.
+    fun localName(name: String?, url: String): String {
+        val raw = name?.takeIf { it.isNotEmpty() } ?: url.substringBefore('?').substringAfterLast('/')
+        val cleaned = raw.replace('/', '_').replace(':', '_').trim()
+        return if (cleaned.isEmpty() || cleaned.startsWith(".")) "file$cleaned" else cleaned
+    }
+}
+
+/// Downloads a chat file into the cache and opens it in an app that can show it
+/// (a PDF viewer, Files), never the browser. False when offline or nothing can open it.
+suspend fun openChatFile(context: Context, url: String, name: String?): Boolean {
+    val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(context.cacheDir, "chat-files/${UUID.randomUUID()}").apply { mkdirs() }
+            val dest = java.io.File(dir, ChatFile.localName(name, url))
+            java.net.URL(url).openStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
+            dest
+        }.getOrNull()
+    } ?: return false
+    return runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ChatFile.ext(file.name, null))
+            ?: "application/octet-stream"
+        val view = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(android.content.Intent.createChooser(view, file.name).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
+}
+
 /// Saves a chat photo to the gallery (Pictures/TNA) through MediaStore. Needs no
 /// permission on Android 10+; older systems are not supported and return false.
-suspend fun savePhotoToGallery(context: Context, url: String): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+/// The original bytes and type are kept (a photo sent as a file stays full quality).
+suspend fun savePhotoToGallery(context: Context, url: String, fileName: String? = null): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
     runCatching {
-        val name = "tna-${System.currentTimeMillis()}.jpg"
+        val mime = ChatFile.photoMime(fileName, url)
+        val name = fileName?.takeIf { it.isNotBlank() }?.let { ChatFile.localName(it, url) }
+            ?: "tna-${System.currentTimeMillis()}.${ChatFile.ext(null, url).ifEmpty { "jpg" }}"
         if (android.os.Build.VERSION.SDK_INT < 29) return@runCatching false
         val bytes = java.net.URL(url).openStream().use { it.readBytes() }
         val values = android.content.ContentValues().apply {
             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, mime)
             put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/TNA")
         }
         val resolver = context.contentResolver

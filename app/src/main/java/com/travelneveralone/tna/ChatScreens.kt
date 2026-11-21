@@ -451,7 +451,9 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                                         onReact = { app.react(message.id, it) },
                                         onImageTap = {
                                             val urls = messages.filter { it.kind == MessageKind.Image }.mapNotNull { it.mediaUrl }
-                                            viewer = urls to urls.indexOf(message.mediaUrl).coerceAtLeast(0)
+                                            val i = urls.indexOf(message.mediaUrl)
+                                            // A photo sent as a file is not in the gallery: show it alone.
+                                            viewer = if (i >= 0) urls to i else listOfNotNull(message.mediaUrl) to 0
                                         },
                                         onRetry = { app.retry(message) },
                                     )
@@ -522,7 +524,12 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
             }
         }
     }
-    viewer?.let { (urls, start) -> ImageViewerDialog(urls, start) { viewer = null } }
+    viewer?.let { (urls, start) ->
+        ImageViewerDialog(urls, start, onSave = if (android.os.Build.VERSION.SDK_INT >= 29) { url ->
+            val name = messages.firstOrNull { it.mediaUrl == url }?.mediaName
+            app.launch { app.chatNotice = if (savePhotoToGallery(context, url, name)) "Сохранено в галерею" else "Не удалось сохранить фото" }
+        } else null) { viewer = null }
+    }
     if (app.participantsShown) ParticipantsSheet(app)
     if (composingPoll) PollComposerSheet(onDismiss = { composingPoll = false }) { app.createPoll(it) }
     if (sharingLocation) LocationShareSheet(app) { sharingLocation = false }
@@ -699,17 +706,33 @@ private fun MessageBubble(
                 }
                 MessageKind.File -> {
                     val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
+                    var loading by remember { mutableStateOf(false) }
+                    // A photo sent as a file opens in the chat's photo viewer (with
+                    // «save to gallery»), anything else in an app for it - never the browser (TNA-90).
+                    val photo = ChatFile.isPhoto(message.mediaName, message.mediaUrl)
                     Row(
                         Modifier.pressable(0.97f) {
-                            message.mediaUrl?.let { url -> runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } }
+                            val url = message.mediaUrl
+                            if (url != null && message.status == MessageStatus.Sent && !loading) {
+                                if (photo) onImageTap() else {
+                                    loading = true
+                                    scope.launch {
+                                        if (!openChatFile(context, url, message.mediaName)) {
+                                            android.widget.Toast.makeText(context, "Не удалось открыть файл", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        loading = false
+                                    }
+                                }
+                            }
                         },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.InsertDriveFile, null, tint = ink, modifier = Modifier.size(22.dp))
+                        Icon(if (photo) Icons.Filled.Image else Icons.Filled.InsertDriveFile, null, tint = ink, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(message.mediaName ?: "Файл", color = ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Открыть", color = ink.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Text(if (loading) "Загружаю…" else "Открыть", color = ink.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                     Row(Modifier.align(Alignment.End)) { TimeMeta(message, if (mine) Color.White.copy(alpha = 0.7f) else TnaColor.subtle) }
@@ -846,11 +869,12 @@ private fun MessageMenu(app: AppModel, message: Message, thread: ChatThread, con
             DropdownMenuItem(text = { Text("Повторить") }, leadingIcon = { Icon(Icons.Filled.Refresh, null) }, onClick = { onDismiss(); app.retry(message) })
         }
         val photoUrl = message.mediaUrl
-        if (message.kind == MessageKind.Image && message.status == MessageStatus.Sent && photoUrl != null && android.os.Build.VERSION.SDK_INT >= 29) {
+        val savable = message.kind == MessageKind.Image || (message.kind == MessageKind.File && ChatFile.isPhoto(message.mediaName, photoUrl))
+        if (savable && message.status == MessageStatus.Sent && photoUrl != null && android.os.Build.VERSION.SDK_INT >= 29) {
             DropdownMenuItem(text = { Text("Сохранить в галерею") }, leadingIcon = { Icon(Icons.Filled.Download, null) }, onClick = {
                 onDismiss()
                 app.launch {
-                    app.chatNotice = if (savePhotoToGallery(context, photoUrl)) "Сохранено в галерею" else "Не удалось сохранить фото"
+                    app.chatNotice = if (savePhotoToGallery(context, photoUrl, message.mediaName.takeIf { message.kind == MessageKind.File })) "Сохранено в галерею" else "Не удалось сохранить фото"
                 }
             })
         }

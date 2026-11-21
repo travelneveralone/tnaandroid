@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="shared" path="shared/" />
+    <!-- Chat files opened in another app (TNA-90). -->
+    <cache-path name="chat-files" path="chat-files/" />
 </paths>
