@@ -59,12 +59,32 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         user = { auth.userId },
     )
     val repo = TnaRepository(api, auth)
+    /// Force update / «new version» banner (TNA-114). Mock: never asks.
+    val versionGate = PrefsStringStore(app, "tna.appversion").let { store ->
+        AppVersionGate(
+            checker = if (AppConfig.useMock) object : AppVersionChecking { override suspend fun check(): AppVersionVerdict? = null }
+            else LiveAppVersionCheck(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY, { auth.token() }, store),
+            store = store,
+        )
+    }
 
     init {
         // Live locations outlive the chat screen (and this model): the hub and
         // its foreground service talk to the backend through the same repo.
         LiveLocationHub.repo = repo
         LiveLocationHub.resume(app)
+        UpgradeSignal.listener = { viewModelScope.launch { versionGate.upgradeRequired() } }
+    }
+
+    override fun onCleared() {
+        UpgradeSignal.listener = null
+        super.onCleared()
+    }
+
+    /// Activity came to the foreground: back from Google Play, an updated
+    /// build unblocks itself here (throttled inside the gate).
+    fun onAppStart() {
+        viewModelScope.launch { versionGate.refresh() }
     }
     /// Numbers the account can sign in with (several per person, TNACloud 0153).
     val loginPhones: LoginPhonesBackend = if (AppConfig.useMock) MockLoginPhones() else repo.loginPhones
@@ -170,6 +190,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         // Nothing on the network holds the launch: the catalog starts right away, in
         // parallel with the session check, and serves the cache after 5 s (iOS rule).
         loadCatalog()
+        viewModelScope.launch { versionGate.refresh(force = true) }
         viewModelScope.launch {
             val reachable = runCatching { auth.token() != null && network.isOnline }.getOrDefault(false)
             if (reachable) {

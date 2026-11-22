@@ -36,6 +36,7 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         model.appLock.didBecomeActive()
+        model.onAppStart()
     }
 
     override fun onStop() {

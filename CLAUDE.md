@@ -52,4 +52,6 @@ MVVM, одна точка сборки зависимостей в `AppModel` (�
 
 Правила: никаких эмодзи вместо иконок (только `sfIcon`), никаких моков в живом режиме (`Mock.*` только при `AppConfig.useMock`), состояние, которое видит UI, - только Compose state (`mutableStateOf`), иначе экран не перерисуется.
 
+Версия приложения (TNA-114): `AppVersion.kt` ← `Core/Services/AppVersion.swift`, экраны - `AppUpdateScreens.kt` ← `Features/Update`. `Postgrest` шлёт `x-app-*` заголовки и на 426 дёргает `UpgradeSignal`; проверка - `AppModel.boot()` и `MainActivity.onStart`. Номер сборки для сервера - `BuildConfig.TNA_BUILD` (ГГММДД.ЧЧММ), поэтому `TNA_BUILD` в `scripts/build.sh` должен расти.
+
 Видео на карточках карусели - `LoopingVideo.kt` (← `FeaturedVideoPolicy`, `LoopingVideo`, `TourVideoCache`): качаем только не по мобильной сети, играет одна видимая карточка и только когда каталог сверху.

@@ -116,6 +116,19 @@ fun Root(app: AppModel) {
         ) {
             notice?.let { (title, icon) -> OfflineBanner(title, icon) }
         }
+        // «Вышла новая версия» (TNA-114), under the offline pill when both show.
+        AnimatedVisibility(
+            app.versionGate.showsBanner && !app.showSplash && app.onboarded && app.openChat == null && app.openTour == null,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = if (notice != null && !app.showSplash) 30.dp else 0.dp),
+        ) {
+            UpdateBanner(
+                onTrip = app.versionGate.verdict?.onTrip ?: false,
+                storeUrl = app.versionGate.storeUrl,
+                onDismiss = { app.versionGate.dismissBanner() },
+            )
+        }
         AnimatedVisibility(app.showSplash, enter = fadeIn(), exit = fadeOut()) { Splash(app.isProd) }
         app.sheet?.let { sheet -> SheetHost(app, sheet) { app.sheet = null } }
         // Full-screen covers sit above tabs and sheets, like iOS fullScreenCover.
@@ -132,6 +145,10 @@ fun Root(app: AppModel) {
                 text = { Text(message) },
                 containerColor = TnaColor.bg,
             )
+        }
+        // This build is no longer supported (TNA-114): nothing else is usable.
+        AnimatedVisibility(app.versionGate.isBlocked && !app.showSplash, enter = fadeIn(), exit = fadeOut()) {
+            ForceUpdateScreen(app.versionGate.verdict?.message.orEmpty(), app.versionGate.storeUrl, app.isProd)
         }
         // Above everything: the biometric lock and its post-login offer.
         AppLockLayer(app)

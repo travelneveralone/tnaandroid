@@ -287,6 +287,9 @@ class Postgrest(
             .header("Authorization", "Bearer ${jwt ?: anonKey}")
             .header("Accept", "application/json")
             .apply {
+                // Which build is asking: lets the backend refuse a build it no
+                // longer supports (426) instead of answering in a shape it can't read.
+                AppBuild.headers.forEach { (k, v) -> header(k, v) }
                 if (prefer != null) header("Prefer", prefer)
                 if (body != null) method(method, body.toRequestBody(jsonMedia))
                 else method(method, null)
@@ -295,6 +298,8 @@ class Postgrest(
         try {
             http.newCall(request).execute().use { response ->
                 val text = response.body?.string().orEmpty()
+                // 426 = this build is no longer supported (0185): the update screen.
+                if (response.code == 426) UpgradeSignal.fire()
                 if (!response.isSuccessful) {
                     if (cached) {
                         cache.readStale(cacheKey)?.let { return@withContext it }
