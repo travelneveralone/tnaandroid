@@ -719,12 +719,14 @@ data class TripContact(val id: UUID, val name: String, val phone: String, val so
 enum class UserRole {
     Client, Guide, Curator, Partner, Manager, Admin;
 
-    val isStaffLimited: Boolean get() = this == Guide || this == Curator || this == Partner
-    val canBookAndEarn: Boolean get() = this == Client
+    /** Booking, passport/achievements, countries map, companions, bookings and
+     *  gift certificates. Staff travel with us too (TNA-60): everyone except
+     *  partners (iOS `UserRole.canBookAndEarn`). */
+    val canBookAndEarn: Boolean get() = this != Partner
+    /** Referral promo - the server issues referral codes to clients only. */
+    val canRefer: Boolean get() = this == Client
     val canDirectMessage: Boolean get() = this != Partner
     val isManagement: Boolean get() = this == Admin || this == Manager
-    val isOpsOnly: Boolean get() = this == Manager
-    val hasTravelProfile: Boolean get() = !isOpsOnly
 
     fun mayStartDirectMessage(target: UserRole): Boolean {
         if (this == Partner || target == Partner) return false

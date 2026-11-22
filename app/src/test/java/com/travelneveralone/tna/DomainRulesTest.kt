@@ -101,9 +101,11 @@ class DomainRulesTest {
 
     @Test fun rolesAndDirectMessages() {
         assertTrue(UserRole.Client.canBookAndEarn)
-        assertFalse(UserRole.Guide.canBookAndEarn)
-        assertTrue(UserRole.Manager.isOpsOnly)
-        assertFalse(UserRole.Manager.hasTravelProfile)
+        assertTrue(UserRole.Guide.canBookAndEarn)
+        assertTrue(UserRole.Manager.canBookAndEarn)
+        assertFalse(UserRole.Partner.canBookAndEarn)
+        assertTrue(UserRole.Client.canRefer)
+        assertFalse(UserRole.Manager.canRefer)
         assertFalse(UserRole.Client.mayStartDirectMessage(UserRole.Admin))
         assertTrue(UserRole.Client.mayStartDirectMessage(UserRole.Guide))
         assertFalse(UserRole.Partner.mayStartDirectMessage(UserRole.Client))

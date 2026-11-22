@@ -111,8 +111,8 @@ fun ProfileScreen(app: AppModel) {
                 app.sheet = Sheet.EditProfile
             }
         }
-        if (registered && app.role.hasTravelProfile) TripsBlock(app)
-        if (app.role.canBookAndEarn) PromoCard(app)
+        if (registered) TripsBlock(app)
+        if (app.role.canRefer) PromoCard(app)
         SettingsList(app, onIssue = { issueAsk = true })
         if (registered) {
             Box(
@@ -248,7 +248,7 @@ private fun ProfileHeader(app: AppModel) {
                     Modifier.clip(CircleShape).background(TnaColor.accent.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(if (app.role.canBookAndEarn) Icons.Filled.MilitaryTech else Icons.Filled.VerifiedUser, null, tint = TnaColor.accent, modifier = Modifier.size(13.dp))
+                    Icon(if (app.role == UserRole.Client) Icons.Filled.MilitaryTech else Icons.Filled.VerifiedUser, null, tint = TnaColor.accent, modifier = Modifier.size(13.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(badge, color = TnaColor.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
@@ -290,7 +290,7 @@ private fun ProfileNudge(role: UserRole, onDismiss: () -> Unit, onFill: () -> Un
             Icon(Icons.Filled.Close, "Скрыть", tint = TnaColor.subtle, modifier = Modifier.size(16.dp).pressable(0.9f, onClick = onDismiss))
         }
         Text(
-            if (role == UserRole.Partner || !role.hasTravelProfile) "ФИО, дата рождения и город - базовая информация о тебе для команды TNA."
+            if (role == UserRole.Partner) "ФИО, дата рождения и город - базовая информация о тебе для команды TNA."
             else "Дата рождения, город, почта и документ - чтобы билеты оформлялись за пару касаний.",
             color = TnaColor.subtle,
             fontSize = 13.sp,
