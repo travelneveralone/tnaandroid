@@ -236,7 +236,7 @@ class BookingForm(
     )
 
     companion object {
-        private val monthsShort = listOf("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+        private val monthsShort = listOf("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
 
         /// «3–9 мар» or «28 фев – 5 мар».
         fun rangeLabel(start: java.time.LocalDate, end: java.time.LocalDate): String {
