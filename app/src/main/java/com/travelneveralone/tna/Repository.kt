@@ -1092,7 +1092,7 @@ class TnaRepository(
     }
 
     /// Email is verified by a code (verify-email edge function), never saved directly.
-    suspend fun requestEmailCode(email: String): EmailVerifyResult = verifyEmail(buildJsonObject {
+    suspend fun requestEmailCode(email: String): EmailVerifyReply = verifyEmail(buildJsonObject {
         put("action", "request")
         put("email", email.trim())
     }.toString())
@@ -1100,12 +1100,15 @@ class TnaRepository(
     suspend fun confirmEmailCode(code: String): EmailVerifyResult = verifyEmail(buildJsonObject {
         put("action", "confirm")
         put("code", code.trim())
-    }.toString())
+    }.toString()).result
 
-    private suspend fun verifyEmail(body: String): EmailVerifyResult = runCatching {
-        val obj = json.parseToJsonElement(api.function("verify-email", body)).jsonObjectOrNull()
-        EmailVerifyResult.from(obj?.bool("ok"), obj?.str("error"))
-    }.getOrDefault(EmailVerifyResult.Error)
+    /// Reads the body whatever the status: refusals (wrong code 400, pause 429)
+    /// come with a reason the person must see, not «Сервер ответил 400».
+    private suspend fun verifyEmail(body: String): EmailVerifyReply = runCatching {
+        val raw = api.functionBody("verify-email", body) ?: return@runCatching EmailVerifyReply(EmailVerifyResult.Error)
+        val obj = json.parseToJsonElement(raw).jsonObjectOrNull()
+        EmailVerifyReply.from(obj?.bool("ok"), obj?.str("error"), obj?.int("retry_after"))
+    }.getOrDefault(EmailVerifyReply(EmailVerifyResult.Error))
 
     suspend fun fetchPrefs(): NotificationPrefs {
         val raw = api.get("notification_prefs", listOf(

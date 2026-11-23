@@ -73,9 +73,20 @@ class ProfileRulesTest {
         assertEquals(EmailVerifyResult.TooManyAttempts, EmailVerifyResult.from(false, "too_many_attempts"))
         assertEquals(EmailVerifyResult.InvalidEmail, EmailVerifyResult.from(false, "invalid_email"))
         assertEquals(EmailVerifyResult.SendFailed, EmailVerifyResult.from(false, "send_failed"))
-        assertEquals(EmailVerifyResult.SendFailed, EmailVerifyResult.from(false, "no_code"))
+        assertEquals(EmailVerifyResult.Expired, EmailVerifyResult.from(false, "no_code"))
+        assertEquals(EmailVerifyResult.Cooldown, EmailVerifyResult.from(false, "cooldown"))
         assertEquals(EmailVerifyResult.Error, EmailVerifyResult.from(false, null))
         EmailVerifyResult.entries.forEach { assertTrue(it.userMessage.isNotBlank()) }
+    }
+
+    @Test fun emailCooldownCarriesTheWait() {
+        assertEquals(EmailVerifyReply(EmailVerifyResult.Cooldown, 42), EmailVerifyReply.from(false, "cooldown", 42))
+        // No retry_after from the server: the usual 60 s pause.
+        assertEquals(60L, EmailVerifyReply.from(false, "cooldown", null).retryAfterSec)
+        assertEquals(1L, EmailVerifyReply.from(false, "cooldown", 0).retryAfterSec)
+        // Anything else has no wait.
+        assertEquals(0L, EmailVerifyReply.from(true, null, 42).retryAfterSec)
+        assertEquals(0L, EmailVerifyReply.from(false, "wrong_code", 42).retryAfterSec)
     }
 
     // MARK: - Someone else's passport (iOS PublicProfileTests)

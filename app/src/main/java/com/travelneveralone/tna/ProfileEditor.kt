@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -267,19 +268,35 @@ private fun EmailBox(app: AppModel) {
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    /// Epoch ms when the server takes a new code request again (iOS resendAvailableAt).
+    var resendAt by remember { mutableStateOf(0L) }
+    // Re-read every second so the resend countdown ticks.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val wait = ((resendAt - now + 999) / 1000).coerceAtLeast(0)
     val trimmed = input.trim()
-    val canRequest = trimmed.contains("@") && trimmed.contains(".") && !busy
+    val canRequest = trimmed.contains("@") && trimmed.contains(".") && !busy && wait == 0L
     fun request() {
+        if (wait > 0) return
         busy = true
         message = null
         scope.launch {
-            val result = app.repo.requestEmailCode(trimmed.lowercase())
+            val reply = app.repo.requestEmailCode(trimmed.lowercase())
             busy = false
-            if (result == EmailVerifyResult.Ok) {
-                codeSent = true
-                code = ""
-            } else {
-                message = result.userMessage
+            when (reply.result) {
+                EmailVerifyResult.Ok -> {
+                    codeSent = true
+                    code = ""
+                    resendAt = System.currentTimeMillis() + EmailVerifyReply.RESEND_SECONDS * 1000
+                }
+                // The button counts down; no frozen "через 0:42" text under it.
+                EmailVerifyResult.Cooldown -> resendAt = System.currentTimeMillis() + reply.retryAfterSec * 1000
+                else -> message = reply.result.userMessage
             }
         }
     }
@@ -315,10 +332,21 @@ private fun EmailBox(app: AppModel) {
                         }
                     }
                 }
-                Text("Отправить код заново", color = TnaColor.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.pressable(enabled = !busy) { request() })
+                Text(
+                    if (wait > 0) "Отправить код заново через ${CodeCooldown.countdown(wait)}" else "Отправить код заново",
+                    color = if (wait > 0) TnaColor.subtle else TnaColor.accent,
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.pressable(enabled = !busy && wait == 0L) { request() },
+                )
             } else {
-                PillAction(if (busy) "Отправляю…" else "Подтвердить почту", enabled = canRequest) { request() }
+                PillAction(
+                    when {
+                        busy -> "Отправляю…"
+                        wait > 0 -> "Подтвердить почту через ${CodeCooldown.countdown(wait)}"
+                        else -> "Подтвердить почту"
+                    },
+                    enabled = canRequest,
+                ) { request() }
             }
         }
         message?.let { Text(it, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium) }

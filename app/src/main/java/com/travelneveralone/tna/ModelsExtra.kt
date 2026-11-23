@@ -290,17 +290,36 @@ enum class EmailVerifyResult(val userMessage: String) {
     TooManyAttempts("Слишком много попыток"),
     InvalidEmail("Неверный адрес почты"),
     SendFailed("Не удалось отправить письмо"),
+    /// The server refused a new code for now (60 s pause or 5 codes a day, 0186).
+    /// The resend button counts down; this text is a fallback only.
+    Cooldown("Новый код можно запросить чуть позже"),
     Error("Что-то пошло не так - можно повторить");
 
     companion object {
         fun from(ok: Boolean?, error: String?): EmailVerifyResult = when {
             ok == true -> Ok
             error == "wrong_code" -> WrongCode
-            error == "expired" -> Expired
+            error == "expired" || error == "no_code" -> Expired
             error == "too_many_attempts" -> TooManyAttempts
             error == "invalid_email" -> InvalidEmail
-            error == "send_failed" || error == "no_code" -> SendFailed
+            error == "send_failed" -> SendFailed
+            error == "cooldown" -> Cooldown
             else -> Error
+        }
+    }
+}
+
+/// Answer of verify-email: the result plus, for [EmailVerifyResult.Cooldown],
+/// how many seconds until a new code may be requested (iOS `.cooldown(seconds:)`).
+data class EmailVerifyReply(val result: EmailVerifyResult, val retryAfterSec: Long = 0) {
+    companion object {
+        /// Resend pause after a sent code; same as login SMS ([CodeCooldown.RESEND_SECONDS]).
+        const val RESEND_SECONDS = CodeCooldown.RESEND_SECONDS
+
+        fun from(ok: Boolean?, error: String?, retryAfter: Int?): EmailVerifyReply {
+            val result = EmailVerifyResult.from(ok, error)
+            val wait = if (result == EmailVerifyResult.Cooldown) (retryAfter ?: RESEND_SECONDS.toInt()).coerceAtLeast(1).toLong() else 0L
+            return EmailVerifyReply(result, wait)
         }
     }
 }
