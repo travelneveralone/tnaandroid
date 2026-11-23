@@ -8,7 +8,8 @@
 #                   the file you send to people directly (see ДИСТРИБУЦИЯ.md)
 #
 # Nothing is uploaded anywhere: there is no Play account yet. The script builds,
-# prints where the file is and opens it in Finder.
+# copies the result to TNA-<env>-<build>.<apk|aab> next to Gradle's output,
+# prints where that file is and opens it in Finder.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -45,5 +46,13 @@ else
 fi
 
 [ -f "$OUT" ] || { echo "build finished but $OUT is missing" >&2; exit 1; }
+
+# The file people get carries its build number, so a tester can see which one
+# is installed before opening the app: TNA-beta-261123.2334.apk. Copied, not
+# moved: Gradle owns its own output name.
+EXT="${OUT##*.}"
+NAMED="$(dirname "$OUT")/TNA-$ENV-$TNA_BUILD.$EXT"
+cp "$OUT" "$NAMED"
+OUT="$NAMED"
 printf '\n\033[32mandroid %s, build %s:\033[0m %s\n%s\n' "$ENV" "$TNA_BUILD" "$ROOT/$OUT" "$NOTE"
 command -v open >/dev/null && open -R "$OUT" || true
