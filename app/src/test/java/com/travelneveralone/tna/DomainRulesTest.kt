@@ -359,12 +359,18 @@ class DomainRulesTest {
     }
 
     @Test
-    fun countryMapCycleAndCounters() {
-        // Map tap order matches iOS: был → живу → хочу → снять.
-        assertEquals(CountryStatus.Visited, CountryMapRules.next(null))
-        assertEquals(CountryStatus.Lives, CountryMapRules.next(CountryStatus.Visited))
-        assertEquals(CountryStatus.Wants, CountryMapRules.next(CountryStatus.Lives))
-        assertNull(CountryMapRules.next(CountryStatus.Wants))
+    fun messageSentLateMovesBelowRepliesThatArrivedMeanwhile() {
+        val mine = Message(text = "без сети", isMine = true, author = "Я", time = "10:00",
+            status = MessageStatus.Queued, createdAt = java.time.Instant.ofEpochSecond(100))
+        val theirs = Message(text = "ответ", isMine = false, author = "Аня", time = "10:01",
+            createdAt = java.time.Instant.ofEpochSecond(200))
+        val out = ChatOrder.landed(listOf(mine, theirs), mine.id, java.time.Instant.ofEpochSecond(300))
+        assertEquals(listOf(theirs.id, mine.id), out.map { it.id })
+        assertEquals(MessageStatus.Sent, out.last().status)
+    }
+
+    @Test
+    fun countryMapCounters() {
         val mine = mapOf("RUS" to CountryStatus.Lives, "ITA" to CountryStatus.Wants)
         val tna = setOf("RUS", "GEO")
         // A TNA country counts as «был» unless the person set something else.

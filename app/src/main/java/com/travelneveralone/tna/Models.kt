@@ -1042,3 +1042,16 @@ fun chatMapPoints(messages: List<Message>, focus: Message? = null, now: Instant 
         if (m.id == focus?.id) true else seen.add(m.authorId?.toString() ?: m.author)
     }
 }
+
+/// Keeps the local chat in the order the server stores it.
+object ChatOrder {
+    /// The server stamps a row when it lands, not when it was typed: a message
+    /// sent late (bad network, a retry) sits AFTER whatever others sent meanwhile.
+    /// Mark it sent and move it there, or the next history load reshuffles the
+    /// chat (TNA-150, same as iOS). sortedBy is stable, so ties keep their order.
+    fun landed(messages: List<Message>, id: UUID, at: Instant): List<Message> =
+        messages.map {
+            if (it.id != id) it
+            else it.copy(status = MessageStatus.Sent, createdAt = if (it.createdAt < at) at else it.createdAt)
+        }.sortedBy { it.createdAt }
+}

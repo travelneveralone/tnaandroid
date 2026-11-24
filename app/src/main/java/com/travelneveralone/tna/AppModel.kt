@@ -339,7 +339,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             val live = resolveThread(thread)
             runCatching { repo.sendText(live.id, local.text, local.id, local.replyTo) }
                 .onSuccess {
-                    messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it }
+                    messages = ChatOrder.landed(messages, local.id, java.time.Instant.now())
                     // Push after the tick: never keep the bubble waiting on it.
                     launch { repo.notifyMessage(local.id) }
                 }

@@ -54,16 +54,8 @@ import kotlinx.coroutines.withContext
 
 // Port of TNAiOS Countries/CountriesMapView + CountriesViewModel (Vinski-style "been" map).
 
-/// Pure rules of the countries map: tap cycle, auto-TNA, counters, filters.
+/// Pure rules of the countries map: auto-TNA, counters, filters.
 object CountryMapRules {
-    /// Map tap: nothing → был → живу → хочу → nothing.
-    fun next(current: CountryStatus?): CountryStatus? = when (current) {
-        null -> CountryStatus.Visited
-        CountryStatus.Visited -> CountryStatus.Lives
-        CountryStatus.Lives -> CountryStatus.Wants
-        CountryStatus.Wants -> null
-    }
-
     /// A country visited with TNA counts as «был» unless the person set something else.
     fun display(statuses: Map<String, CountryStatus>, tna: Set<String>): Map<String, CountryStatus> =
         statuses + tna.filter { it !in statuses }.associateWith { CountryStatus.Visited }
@@ -96,25 +88,20 @@ private val ocean = Color.hex(0x9FC7DD).copy(alpha = 0.35f)
 private val land = Color.hex(0xD8D0C2)
 
 /// Equirectangular world map (2:1). Status colours the fill; TNA countries get a white outline.
+/// Display only: on a phone-sized map a finger hits the wrong country too easily,
+/// so statuses are picked in the searchable list (TNA-139, same as iOS).
 @Composable
 fun WorldMapCanvas(
     statuses: Map<String, CountryStatus>,
     tna: Set<String>,
     modifier: Modifier = Modifier,
-    onTap: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var countries by remember { mutableStateOf<List<GeoCountry>>(emptyList()) }
     LaunchedEffect(Unit) { countries = withContext(Dispatchers.Default) { WorldAtlas.load(context) } }
     val shape = RoundedCornerShape(16.dp)
     Canvas(
-        modifier.fillMaxWidth().aspectRatio(2f).clip(shape).background(ocean).border(1.dp, TnaColor.stroke, shape)
-            .pointerInput(countries, onTap) {
-                if (onTap == null) return@pointerInput
-                detectTapGestures { p ->
-                    WorldAtlas.countryAt(countries, p.x, p.y, size.width.toFloat(), size.height.toFloat())?.let(onTap)
-                }
-            },
+        modifier.fillMaxWidth().aspectRatio(2f).clip(shape).background(ocean).border(1.dp, TnaColor.stroke, shape),
     ) {
         countries.forEach { country ->
             val path = Path()
@@ -135,10 +122,10 @@ fun WorldMapCanvas(
 
 /// Map with the expand button; legend filters are applied by the caller.
 @Composable
-private fun ExpandableMap(statuses: Map<String, CountryStatus>, tna: Set<String>, onTap: ((String) -> Unit)?) {
+private fun ExpandableMap(statuses: Map<String, CountryStatus>, tna: Set<String>) {
     var full by remember { mutableStateOf(false) }
     Box {
-        WorldMapCanvas(statuses, tna, onTap = onTap)
+        WorldMapCanvas(statuses, tna)
         Box(
             Modifier.align(Alignment.TopEnd).padding(8.dp).size(34.dp).clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.85f)).border(1.dp, TnaColor.stroke, CircleShape)
@@ -178,7 +165,7 @@ fun CountriesCompact(statuses: Map<String, CountryStatus>, tna: Set<String>) {
     val display = CountryMapRules.display(statuses, tna)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         StatsRow(statuses, tna)
-        ExpandableMap(display, tna, onTap = null)
+        ExpandableMap(display, tna)
     }
 }
 
@@ -200,11 +187,11 @@ fun CountriesSheet(app: AppModel) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("МОИ СТРАНЫ", style = displayStyle(28))
             Text(
-                "Отмечай, где живёшь, где был и куда хочешь - нажми на страну на карте или в списке. Кнопка в углу карты открывает её на весь экран с зумом.",
+                "Отмечай, где живёшь, где был и куда хочешь: найди страну через поиск ниже и выбери, что с ней. Кнопка в углу карты открывает её на весь экран с зумом.",
                 color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium,
             )
         }
-        ExpandableMap(mapStatuses, mapTna) { code -> set(code, CountryMapRules.next(app.countries[code.uppercase()])) }
+        ExpandableMap(mapStatuses, mapTna)
         StatsRow(app.countries, app.tnaCountryCodes)
         // Legend doubles as a filter: tap a chip to hide that status (dimmed = hidden).
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
