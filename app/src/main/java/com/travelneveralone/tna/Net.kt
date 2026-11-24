@@ -188,6 +188,17 @@ class Postgrest(
         }.getOrNull()
     }
 
+    /// Uploads carry whole files (a photo «как файл» is the 5-10 MB original):
+    /// the API client's 60 s call limit cut them off on a mobile network and
+    /// the send ended in «нет связи» (TNA-153).
+    private val uploadHttp by lazy {
+        http.newBuilder()
+            .writeTimeout(2, TimeUnit.MINUTES)
+            .readTimeout(2, TimeUnit.MINUTES)
+            .callTimeout(5, TimeUnit.MINUTES)
+            .build()
+    }
+
     suspend fun upload(bucket: String, path: String, bytes: ByteArray, contentType: String): String =
         withContext(Dispatchers.IO) {
             val url = baseUrl.trimEnd('/') + "/storage/v1/object/$bucket/$path"
@@ -199,7 +210,7 @@ class Postgrest(
                 .header("Authorization", "Bearer ${jwt ?: anonKey}")
                 .header("x-upsert", "true")
                 .build()
-            http.newCall(request).execute().use { response ->
+            uploadHttp.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw TnaException("Сервер ответил ${response.code}. Файл не ушёл")
             }
             baseUrl.trimEnd('/') + "/storage/v1/object/public/$bucket/$path"

@@ -11,6 +11,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import java.util.UUID
 
@@ -48,6 +50,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /** Packing checklist ticks, per trip, on the device (0173). */
     val checklist = TripChecklist(PrefsStringSetStore(app, "tna.checklist"))
     val network = NetworkMonitor(app)
+    /// Unsent chat texts, on disk (iOS `Outbox`): they wait out a dead network,
+    /// leaving the chat and a restart, then go out in order (TNA-156/157).
+    val outbox = ChatOutbox(PrefsStringStore(app, "tna.outbox"))
     val account = AccountStore(app)
     private val auth = AuthSession(app, BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY)
     private val api = Postgrest(
@@ -74,6 +79,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         LiveLocationHub.repo = repo
         LiveLocationHub.resume(app)
         UpgradeSignal.listener = { viewModelScope.launch { versionGate.upgradeRequired() } }
+        // Network back: whatever waits goes out by itself.
+        viewModelScope.launch {
+            androidx.compose.runtime.snapshotFlow { network.isOnline }.collect { if (it) flushOutbox() }
+        }
     }
 
     override fun onCleared() {
@@ -279,10 +288,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             val live = resolveThread(thread)
             if (live.id == ChatThread.supportPlaceholder.id) return@launch
             loadChatExtras(live)
-            messages = runCatching { repo.history(live.id) }.getOrElse {
+            val history = runCatching { repo.history(live.id) }.getOrElse {
                 if (AppConfig.useMock && live.isSupport) Mock.managerChat else emptyList()
             }
+            // Texts still waiting for the network sit after what the server has.
+            messages = history + outbox.forChat(live.id).map { it.asMessage() }.filter { w -> history.none { it.id == w.id } }
             runCatching { repo.markRead(live.id) }
+            flushOutbox()
         }
     }
 
@@ -313,6 +325,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         chatDraft = ""
         editingMessage?.let { target ->
             editingMessage = null
+            // Not on the server yet: edit the waiting text, it goes out edited.
+            if (outbox.contains(target.id)) {
+                outbox.updateText(target.id, text)
+                messages = messages.map { if (it.id == target.id) it.copy(text = text, edited = true) else it }
+                return
+            }
             val before = messages.firstOrNull { it.id == target.id }
             messages = messages.map { if (it.id == target.id) it.copy(text = text, edited = true) else it }
             viewModelScope.launch {
@@ -331,28 +349,57 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             status = MessageStatus.Queued, replyTo = reply?.id,
         )
         messages = messages + local
-        deliver(thread, local)
+        outbox.enqueue(OutboxItem(
+            id = local.id.toString(), chatId = thread.id.toString(), text = text, author = local.author,
+            createdAtMs = local.createdAt.toEpochMilli(), replyTo = reply?.id?.toString(),
+        ))
+        flushOutbox()
     }
 
-    private fun deliver(thread: ChatThread, local: Message) {
+    /// Sends what waits, in order. Offline it does nothing: the bubbles keep
+    /// their clock and go when the network is back. A refusal while online
+    /// shows «не отправлено» with a retry; the text stays queued either way.
+    fun flushOutbox() {
+        if (outbox.items.isEmpty() || !network.isOnline) return
         viewModelScope.launch {
-            val live = resolveThread(thread)
-            runCatching { repo.sendText(live.id, local.text, local.id, local.replyTo) }
-                .onSuccess {
-                    messages = ChatOrder.landed(messages, local.id, java.time.Instant.now())
-                    // Push after the tick: never keep the bubble waiting on it.
-                    launch { repo.notifyMessage(local.id) }
+            val delivered = outbox.drain { item ->
+                var chatId = UUID.fromString(item.chatId)
+                if (chatId == ChatThread.supportPlaceholder.id) {
+                    val real = resolveThread(ChatThread.supportPlaceholder)
+                    if (real.id == chatId) error("support chat is not there yet")
+                    outbox.rehome(chatId, real.id)
+                    chatId = real.id
                 }
-                .onFailure { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Failed) else it } }
+                repo.sendText(chatId, item.text, UUID.fromString(item.id), item.replyTo?.let(UUID::fromString))
+            }
+            val now = java.time.Instant.now()
+            for (item in delivered) {
+                val id = UUID.fromString(item.id)
+                messages = ChatOrder.landed(messages, id, now)
+                // Push after the tick: never keep the bubble waiting on it.
+                launch { repo.notifyMessage(id) }
+            }
+            if (network.isOnline) {
+                val stuck = outbox.items.map { it.id }.toSet()
+                messages = messages.map {
+                    if (it.id.toString() in stuck && it.status == MessageStatus.Queued) it.copy(status = MessageStatus.Failed) else it
+                }
+            }
         }
     }
 
     /// Re-send a text that failed (same id, so the server never sees it twice).
     fun retry(message: Message) {
-        val thread = openChat ?: return
         if (message.kind != MessageKind.Text) return
+        if (!outbox.contains(message.id)) {
+            val thread = openChat ?: return
+            outbox.enqueue(OutboxItem(
+                id = message.id.toString(), chatId = thread.id.toString(), text = message.text, author = message.author,
+                createdAtMs = message.createdAt.toEpochMilli(), replyTo = message.replyTo?.toString(),
+            ))
+        }
         messages = messages.map { if (it.id == message.id) it.copy(status = MessageStatus.Queued) else it }
-        deliver(thread, message)
+        flushOutbox()
     }
 
     fun deleteMessage(message: Message) {
@@ -362,6 +409,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         val snapshot = messages
         messages = messages.filter { it.id != message.id }
+        // Never sent: dropping it from the queue is the whole deletion.
+        if (outbox.contains(message.id)) {
+            outbox.remove(message.id)
+            return
+        }
         if (message.status == MessageStatus.Failed) return
         viewModelScope.launch {
             runCatching { repo.deleteMessage(message.id) }.onFailure {
@@ -390,18 +442,32 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         openChat?.takeIf { it.id == id }?.let { openChat = change(it) }
     }
 
-    fun sendImage(bytes: ByteArray) {
+    fun sendImage(bytes: ByteArray) = sendImages(listOf(bytes))
+
+    /// iOS `sendImages`: a multi-pick is one album (shared album id). Every
+    /// placeholder shows at once, the photos upload in parallel, and one push
+    /// goes out for the batch («N фото»), none if all of them failed.
+    fun sendImages(images: List<ByteArray>) {
         val thread = openChat ?: return
-        val local = Message(text = "", isMine = true, author = account.name.ifBlank { "Я" }, time = "сейчас", status = MessageStatus.Queued, kind = MessageKind.Image)
-        messages = messages + local
+        if (images.isEmpty()) return
+        val albumId = if (images.size > 1) UUID.randomUUID() else null
+        val locals = images.map {
+            Message(text = "", isMine = true, author = account.name.ifBlank { "Я" }, time = "сейчас",
+                status = MessageStatus.Queued, kind = MessageKind.Image, albumId = albumId)
+        }
+        messages = messages + locals
         viewModelScope.launch {
             val live = resolveThread(thread)
-            runCatching { repo.sendImage(live.id, bytes, local.id) }
-                .onSuccess {
-                    val fresh = runCatching { repo.history(live.id) }.getOrNull()
-                    messages = fresh ?: messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Sent) else it }
-                }
-                .onFailure { messages = messages.map { if (it.id == local.id) it.copy(status = MessageStatus.Failed) else it } }
+            val results = locals.zip(images).map { (local, bytes) ->
+                async { local.id to runCatching { repo.sendImage(live.id, bytes, local.id, albumId, notify = false) }.isSuccess }
+            }.awaitAll()
+            val failed = results.filterNot { it.second }.map { it.first }.toSet()
+            results.lastOrNull { it.second }?.let { (id, _) -> launch { repo.notifyMessage(id) } }
+            messages = messages.map { m ->
+                if (locals.any { it.id == m.id }) m.copy(status = if (m.id in failed) MessageStatus.Failed else MessageStatus.Sent) else m
+            }
+            // Server copies replace the sent ones; failed bubbles stay for a retry.
+            reloadOpenChat()
         }
     }
 
@@ -1202,6 +1268,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         recap = null
         tripPlan = null
         checklist.clear()
+        // Another person may sign in next: their chats must not send these.
+        outbox.clear()
         threads = emptyList()
         loadChats()
     }

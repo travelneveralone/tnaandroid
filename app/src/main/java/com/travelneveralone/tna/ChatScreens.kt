@@ -296,11 +296,11 @@ fun authorColor(name: String): Color {
 @Composable
 fun ChatScreen(app: AppModel, thread: ChatThread) {
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-            ?: run { app.chatNotice = "Не удалось прочитать файл"; return@rememberLauncherForActivityResult }
-        app.sendImage(bytes)
+    // Up to 10 photos at once, like iOS: several become one album tile (TNA-152).
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val images = uris.mapNotNull { uri -> runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() }
+        if (images.isEmpty()) app.chatNotice = "Не удалось прочитать файл" else app.sendImages(images)
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -495,7 +495,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                 },
             )
             DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }, containerColor = TnaColor.surface) {
-                DropdownMenuItem(text = { Text("Фото") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; picker.launch("image/*") })
+                DropdownMenuItem(text = { Text("Фото") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; picker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
                 DropdownMenuItem(text = { Text("Фото как файл") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { attachMenu = false; photoFilePicker.launch("image/*") })
                 DropdownMenuItem(text = { Text("Файл") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { attachMenu = false; filePicker.launch("*/*") })
                 if (thread.kind == ChatThreadKind.Trip) {

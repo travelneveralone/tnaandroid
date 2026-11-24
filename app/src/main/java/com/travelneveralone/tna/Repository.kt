@@ -887,7 +887,9 @@ class TnaRepository(
         }
     }
 
-    suspend fun sendImage(chatId: UUID, bytes: ByteArray, messageId: UUID = UUID.randomUUID()) {
+    /// `albumId` groups a multi-pick into one tile; `notify = false` when the
+    /// caller sends one push for the whole batch.
+    suspend fun sendImage(chatId: UUID, bytes: ByteArray, messageId: UUID = UUID.randomUUID(), albumId: UUID? = null, notify: Boolean = true) {
         val jpeg = compressJpeg(bytes)
         val path = "${chatId.toString().lowercase()}/${messageId.toString().lowercase()}.jpg"
         val url = api.upload("chat-media", path, jpeg, "image/jpeg")
@@ -897,8 +899,9 @@ class TnaRepository(
             put("text", "")
             put("kind", "image")
             put("media_url", url)
+            albumId?.let { put("album_id", it.toString()) }
         }.toString(), prefer = "resolution=ignore-duplicates,return=minimal")
-        runCatching {
+        if (notify) runCatching {
             api.function("notify-message", buildJsonObject { put("message_id", messageId.toString()) }.toString())
         }
     }
