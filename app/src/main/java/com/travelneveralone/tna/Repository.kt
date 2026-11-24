@@ -83,6 +83,19 @@ class TnaRepository(
         }.toString()
         val created = api.post("bookings", body, prefer = "return=representation")
         val bookingId = json.parseToJsonElement(created).arrayOrEmpty().firstOrNull()?.jsonObjectOrNull()?.str("id")
+        // Link the checked certificate (TNACloud 0190): the server re-checks the PIN
+        // and redeems it at prepayment. Best-effort, like iOS - the request is sent.
+        val certCode = request.certificateCode
+        val certPin = request.certificatePin
+        if (bookingId != null && certCode != null && certPin != null) {
+            runCatching {
+                api.rpc("attach_certificate", buildJsonObject {
+                    put("p_booking", bookingId)
+                    put("p_code", certCode)
+                    put("p_pin", certPin)
+                }.toString())
+            }
+        }
         // Fire-and-forget: a failed push leaves amo status null for the admin retry.
         if (bookingId != null) {
             runCatching { api.function("amocrm-booking", buildJsonObject { put("booking_id", bookingId) }.toString()) }

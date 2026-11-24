@@ -137,6 +137,22 @@ class BookingRulesTest {
         assertEquals(1, f.request().peopleCount)
     }
 
+    // MARK: - Checked certificate goes with the request (TNA-120)
+
+    @Test
+    fun onlyACheckedCertificateIsSentWithTheRequest() {
+        val cert = CertificateRedemption()
+        cert.updateCode("tna-demo-0000")
+        cert.updatePin("0000")
+        assertNull(cert.verifiedCode)                       // not checked yet
+        cert.result = CertificateCheck.Applicable
+        assertEquals("TNA-DEMO-0000", cert.verifiedCode)
+        assertEquals("0000", cert.verifiedPin)
+        cert.updatePin("0001")                              // edit drops the check
+        assertNull(cert.verifiedCode)
+        assertNull(cert.verifiedPin)
+    }
+
     // MARK: - Gift certificate fields (iOS CertificateRedemption)
 
     @Test fun certificateCodeIsTypedWithoutPrefixAndDashes() {

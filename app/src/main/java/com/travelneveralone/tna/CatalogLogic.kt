@@ -233,6 +233,8 @@ class BookingForm(
         companions = companions,
         details = details(),
         departureId = departure?.backendId,
+        certificateCode = cert.verifiedCode,
+        certificatePin = cert.verifiedPin,
     )
 
     companion object {
@@ -268,6 +270,10 @@ class CertificateRedemption {
         }
     val codeComplete: Boolean get() = code.count { it.isLetterOrDigit() } >= 3 + BODY_LENGTH
     val canCheck: Boolean get() = codeComplete && pin.trim().length == 4 && !isChecking
+    /// The checked pair, sent with the request (attach_certificate, TNACloud 0190).
+    /// Editing either field clears `result`, so `applied` means this exact pair.
+    val verifiedCode: String? get() = if (applied) code.trim().uppercase() else null
+    val verifiedPin: String? get() = if (applied) pin.trim() else null
     val detailsLine: String?
         get() = if (!applied) null
         else "Сертификат: ${code.trim().uppercase()} на ${Money.grouped(amount)} ₽ (проверен, PIN сошёлся)"

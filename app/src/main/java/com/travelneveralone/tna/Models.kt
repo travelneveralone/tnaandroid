@@ -235,6 +235,9 @@ data class BookingRequest(
     val companions: List<TravelCompanion> = emptyList(),
     val details: List<String> = emptyList(),
     val departureId: UUID? = null,
+    /** A certificate that passed the PIN check: linked to the request (TNA-120). */
+    val certificateCode: String? = null,
+    val certificatePin: String? = null,
 ) {
     val subject: String
         get() = listOf(tourName, departureLabel).filter { it.isNotEmpty() }.joinToString(" · ")

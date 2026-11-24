@@ -781,6 +781,8 @@ fun IndividualSheet(app: AppModel) {
                             phone = PhoneNumber.e164(form.phone),
                             peopleCount = form.peopleCount.coerceIn(1, 30),
                             details = details,
+                            certificateCode = form.cert.verifiedCode,
+                            certificatePin = form.cert.verifiedPin,
                         )
                     )
                 }
