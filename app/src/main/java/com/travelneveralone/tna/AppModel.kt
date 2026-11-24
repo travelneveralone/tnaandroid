@@ -79,10 +79,6 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         LiveLocationHub.repo = repo
         LiveLocationHub.resume(app)
         UpgradeSignal.listener = { viewModelScope.launch { versionGate.upgradeRequired() } }
-        // Network back: whatever waits goes out by itself.
-        viewModelScope.launch {
-            androidx.compose.runtime.snapshotFlow { network.isOnline }.collect { if (it) flushOutbox() }
-        }
     }
 
     override fun onCleared() {
@@ -94,7 +90,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /// build unblocks itself here (throttled inside the gate).
     fun onAppStart() {
         viewModelScope.launch { versionGate.refresh() }
+        // Network back: whatever waits goes out by itself. Started here, not in
+        // init, so every property the send touches already exists.
+        if (outboxWatch == null) {
+            outboxWatch = viewModelScope.launch {
+                androidx.compose.runtime.snapshotFlow { network.isOnline }.collect { if (it) flushOutbox() }
+            }
+        }
     }
+    private var outboxWatch: kotlinx.coroutines.Job? = null
     /// Numbers the account can sign in with (several per person, TNACloud 0153).
     val loginPhones: LoginPhonesBackend = if (AppConfig.useMock) MockLoginPhones() else repo.loginPhones
     /// Optional biometric lock over the signed-in session (iOS `AppLock`).
