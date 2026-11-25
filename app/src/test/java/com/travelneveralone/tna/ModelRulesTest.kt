@@ -356,6 +356,12 @@ class ModelRulesTest {
         assertFalse(bare.contains("Для:"))
         assertFalse(bare.contains("«"))
         assertFalse(bare.contains("Действует"))
+
+        // The picture carries no PIN, so the message next to it must.
+        val message = cert("paid").shareMessage
+        assertTrue(message.contains("TNA-AAAA-2222"))
+        assertTrue(message.contains("0421"))
+        assertTrue(message.contains("travelneveralone.com"))
     }
 
     @Test fun dataIssuesOpenTheSupportChatWithAGreeting() {

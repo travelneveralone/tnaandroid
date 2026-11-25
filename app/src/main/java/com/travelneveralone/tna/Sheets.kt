@@ -847,7 +847,7 @@ fun CertificateSheet(app: AppModel) {
         SheetColumn {
             Text("← Назад", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.pressable { viewing = null })
             CertificateCard(cert, app.isProd)
-            if (cert.status == "paid") ShareCertificate(cert)
+            if (cert.status == "paid") ShareCertificate(cert, app.isProd)
         }
         return
     }
@@ -864,7 +864,7 @@ fun CertificateSheet(app: AppModel) {
         "done" -> SheetColumn {
             state.certificate?.let { cert ->
                 CertificateCard(cert, app.isProd)
-                if (cert.status == "paid") ShareCertificate(cert)
+                if (cert.status == "paid") ShareCertificate(cert, app.isProd)
                 else {
                     Text("Оплата ещё не подтвердилась. Проверить можно через минуту.", color = TnaColor.subtle, fontSize = 14.sp,
                         fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -988,13 +988,16 @@ private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
 }
 
 @Composable
-private fun ShareCertificate(cert: GiftCertificate) {
+private fun ShareCertificate(cert: GiftCertificate, prod: Boolean) {
     val context = LocalContext.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PrimaryButton("Поделиться", icon = Icons.Filled.Share) {
-            val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, cert.shareText) }
-            context.startActivity(Intent.createChooser(send, null))
+    var sharing by remember(cert.id) { mutableStateOf(false) }
+    if (sharing) {
+        ShareCardDialog("Подарочный сертификат TNA", onDismiss = { sharing = false }, text = cert.shareMessage) {
+            CertificateShareCard(cert, prod)
         }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PrimaryButton("Поделиться", icon = Icons.Filled.Share) { sharing = true }
         Row(
             Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(16.dp)).background(TnaColor.surface).border(1.dp, TnaColor.stroke, RoundedCornerShape(16.dp)).pressable {
                 val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {

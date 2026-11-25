@@ -705,6 +705,15 @@ data class GiftCertificate(
             lines += "Обменять на путешествие: travelneveralone.com"
             return lines.joinToString("\n")
         }
+    /** Goes with the certificate picture (iOS shareMessage): the picture has
+     *  no PIN, so the number and PIN travel here. */
+    val shareMessage: String
+        get() = listOf(
+            "🎁 Тебе подарок - путешествие с Travel Never Alone!",
+            "Сертификат: ${code.orEmpty()}",
+            "PIN для активации: $pin",
+            "Выбрать тур: travelneveralone.com",
+        ).joinToString("\n")
 }
 
 data class ProfileExtras(

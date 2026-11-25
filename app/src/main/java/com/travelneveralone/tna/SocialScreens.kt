@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Backpack
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalHospital
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -291,14 +293,16 @@ fun MiniProfileSheet(app: AppModel, profile: MiniProfile) {
 // MARK: - Share cards
 
 /// Renders [content] in a dialog and shares it as a PNG (iOS ImageRenderer + ShareLink).
+/// [text] goes along with the picture (iOS ShareLink message).
 @Composable
-fun ShareCardDialog(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+fun ShareCardDialog(title: String, onDismiss: () -> Unit, text: String? = null, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val layer = rememberGraphicsLayer()
     var busy by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Scrolls: the 9:16 certificate card is taller than a small phone.
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.drawWithContent {
                 layer.record { this@drawWithContent.drawContent() }
                 drawLayer(layer)
@@ -306,7 +310,7 @@ fun ShareCardDialog(title: String, onDismiss: () -> Unit, content: @Composable (
             PrimaryButton(if (busy) "Готовим…" else "Поделиться", enabled = !busy, icon = Icons.Filled.Share) {
                 busy = true
                 scope.launch {
-                    shareLayer(context, layer, title)
+                    shareLayer(context, layer, title, text)
                     busy = false
                 }
             }
@@ -315,7 +319,7 @@ fun ShareCardDialog(title: String, onDismiss: () -> Unit, content: @Composable (
     }
 }
 
-private suspend fun shareLayer(context: Context, layer: GraphicsLayer, title: String) {
+private suspend fun shareLayer(context: Context, layer: GraphicsLayer, title: String, text: String? = null) {
     runCatching {
         val bitmap = layer.toImageBitmap().asAndroidBitmap()
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
@@ -325,6 +329,7 @@ private suspend fun shareLayer(context: Context, layer: GraphicsLayer, title: St
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
+            if (text != null) putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(send, title))
@@ -378,6 +383,44 @@ fun PassportShareCard(data: PassportData, name: String) {
             Text(data.level, color = TnaColor.accent, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
             Text("travelneveralone.com", color = TnaColor.subtle, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         }
+    }
+}
+
+/// Gift certificate as a story-ready picture (iOS CertificateShareCard).
+/// No PIN on it: people post the picture publicly; the PIN goes in the
+/// share text next to it (GiftCertificate.shareMessage).
+@Composable
+fun CertificateShareCard(cert: GiftCertificate, prod: Boolean) {
+    Column(Modifier.width(360.dp).height(640.dp).background(TnaColor.bg).padding(26.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BrandMark(44, prod)
+            Spacer(Modifier.weight(1f))
+            Text("#путешествуй_не_один", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.weight(1f))
+        Text("ТЕБЕ ПОДАРОК", style = displayStyle(40))
+        Text("путешествие с Travel Never Alone", color = TnaColor.subtle, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 2.dp))
+        Column(
+            Modifier.padding(top = 22.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(TnaColor.accentBrush).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("ПОДАРОЧНЫЙ СЕРТИФИКАТ", style = displayStyle(18, Color.White.copy(alpha = 0.9f)))
+            Text(cert.amountText, style = displayStyle(52, Color.White), maxLines = 1)
+            if (cert.recipientName.isNotBlank()) Text("для ${cert.recipientName}", color = Color.White.copy(alpha = 0.95f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            if (cert.wish.isNotBlank()) Text("«${cert.wish}»", color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 4)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.35f)))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(cert.code.orEmpty(), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                cert.expiresText?.let { Text(it, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CardGiftcard, null, tint = TnaColor.accent, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Выбери тур и активируй сертификат в приложении", color = TnaColor.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Text("travelneveralone.com", color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
