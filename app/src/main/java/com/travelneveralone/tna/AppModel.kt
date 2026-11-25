@@ -243,14 +243,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun loadCatalog() = viewModelScope.launch {
+    fun loadCatalog(fresh: Boolean = false) = viewModelScope.launch {
         if (tours.isEmpty()) catalogState = "loading"
         if (AppConfig.useMock) {
             tours = Mock.tours
             catalogState = "loaded"
             return@launch
         }
-        runCatching { repo.fetchTours() }
+        runCatching { repo.fetchTours(fresh) }
             .onSuccess { loaded ->
                 val mutable = loaded.toMutableList()
                 val offer = runCatching { repo.fetchCampaign() }.getOrNull()

@@ -96,7 +96,7 @@ fun CatalogScreen(app: AppModel) {
         onRefresh = {
             scope.launch {
                 refreshing = true
-                app.loadCatalog().join()
+                app.loadCatalog(fresh = true).join()
                 refreshing = false
             }
         },

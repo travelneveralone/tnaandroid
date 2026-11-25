@@ -27,7 +27,9 @@ class TnaRepository(
     private val api: Postgrest,
     private val auth: AuthSession,
 ) {
-    suspend fun fetchTours(): List<Tour> {
+    /// [fresh]: no two-minute cache - the network answers, the saved copy only
+    /// when it fails (pull to refresh, same as iOS fetchFreshTours, TNA-165).
+    suspend fun fetchTours(fresh: Boolean = false): List<Tour> {
         val today = Dates.todayUtc().toString()
         val columns = "id,slug,name,tagline,hashtag,region,days,km,price_from," +
             "difficulty,max_altitude,symbol,color_start,color_end,image_url,image_focus_x,image_focus_y," +
@@ -41,7 +43,7 @@ class TnaRepository(
             "departures.starts_on" to "gte.$today",
             "departures.order" to "starts_on.asc",
             "order" to "sort",
-        ), ttlSec = 120)
+        ), ttlSec = if (fresh) null else 120)
         return json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { el ->
             el.jsonObjectOrNull()?.let { Mappers.tour(it) }
         }
