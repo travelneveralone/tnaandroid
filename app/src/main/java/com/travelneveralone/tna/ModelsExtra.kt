@@ -462,3 +462,18 @@ class ParsedBookingNote(note: String) {
         return out
     }
 }
+
+/** The feed is one for everyone: a {имя} typed into a news item (it only works
+ *  in a push) drops out with the comma in front of it, so «Привет, {имя}» reads
+ *  «Привет» (TNA-80). iOS NewsDTO.plain, TNACloud plainPushText. */
+object NewsText {
+    fun plain(text: String): String {
+        if (!Regex("\\{\\s*имя\\s*\\}", RegexOption.IGNORE_CASE).containsMatchIn(text)) return text
+        val s = text.replace(Regex(",?\\s*\\{\\s*имя\\s*\\}", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^[\\s,!.]+"), "")
+            .replace(Regex("[ \\t]{2,}"), " ")
+            .trim()
+        if (s.isEmpty()) return s
+        return s.substring(0, 1).uppercase() + s.substring(1)
+    }
+}

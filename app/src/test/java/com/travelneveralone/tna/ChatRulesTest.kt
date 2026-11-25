@@ -21,6 +21,14 @@ class ChatRulesTest {
 
     // MARK: - Names above bubbles
 
+    /** TNA-80: {имя} only works in a push; typed into a news item it drops out. */
+    @Test fun nameTokenDropsOutOfTheNewsFeed() {
+        assertEquals("Привет", NewsText.plain("Привет, {имя}"))
+        assertEquals("Скидка 10%!", NewsText.plain("{имя}, скидка 10%!"))
+        assertEquals("Едем в горы", NewsText.plain("Едем { имя } в горы"))
+        assertEquals("обычный текст ", NewsText.plain("обычный текст "))
+    }
+
     /** TNA-148: the support chat names who answered too («TNA» or the staff name). */
     @Test fun bubblesFromOthersCarryTheAuthorInEveryChat() {
         org.junit.Assert.assertTrue(ChatNames.showsAuthor(msg("Лера"), first = true))

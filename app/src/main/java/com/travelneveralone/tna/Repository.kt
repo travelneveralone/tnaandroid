@@ -188,8 +188,8 @@ class TnaRepository(
             if (newsWindowOver(row.str("show_until"), now)) return@mapNotNull null
             NewsItem(
                 id = UUID.fromString(row.str("id")),
-                title = row.str("title").orEmpty(),
-                body = row.str("body").orEmpty(),
+                title = NewsText.plain(row.str("title").orEmpty()),
+                body = NewsText.plain(row.str("body").orEmpty()),
                 imageUrl = row.str("image_url"),
                 date = displayDay(row.str("published_at") ?: row.str("created_at")),
                 link = newsLink(row.str("link_type"), row.str("link_id")),
