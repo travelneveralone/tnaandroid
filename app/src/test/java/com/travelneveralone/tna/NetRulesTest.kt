@@ -58,4 +58,12 @@ class NetRulesTest {
         assertEquals("Май 2027", monthTitle(LocalDate.of(2027, 5, 14)))
         assertEquals("Январь 2026", monthTitle(LocalDate.of(2026, 1, 1)))
     }
+
+    // TNA-122: pull-to-refresh must reach the server, but stay on the cached
+    // path (ttl 0, not null) so offline still shows the last passport.
+    @Test fun freshPassportSkipsCacheButKeepsOfflineCopy() {
+        assertEquals(300, passportTtl(fresh = false))
+        assertEquals(0, passportTtl(fresh = true))
+        assertTrue(postgrestCaches("POST", "rest/v1/rpc/my_passport", passportTtl(fresh = true)))
+    }
 }

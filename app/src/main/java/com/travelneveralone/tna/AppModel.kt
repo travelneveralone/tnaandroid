@@ -90,6 +90,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /// build unblocks itself here (throttled inside the gate).
     fun onAppStart() {
         viewModelScope.launch { versionGate.refresh() }
+        refreshPassportIfLoaded()
         // Network back: whatever waits goes out by itself. Started here, not in
         // init, so every property the send touches already exists.
         if (outboxWatch == null) {
@@ -779,15 +780,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (!role.canBookAndEarn && tab == AppTab.Passport) tab = AppTab.Tours
     }
 
-    fun loadPassport() = viewModelScope.launch {
+    /// `fresh` = past the read cache (pull-to-refresh, back to the app).
+    fun loadPassport(fresh: Boolean = false) = viewModelScope.launch {
         // The passport is personal: a guest gets the sign-in wall, never sample data.
         if (!account.isRegistered) {
             passport = PassportData.empty
             return@launch
         }
         val name = account.name.ifBlank { profile.displayName }
-        runCatching { repo.fetchPassport(name) }.onSuccess { passport = it }
-        recap = repo.yearRecap()
+        runCatching { repo.fetchPassport(name, fresh) }.onSuccess { passport = it }
+        recap = repo.yearRecap(fresh = fresh)
+    }
+
+    /// Back to the app: a departure may have closed meanwhile. Only once the
+    /// passport has been loaded at all - no loading a tab nobody opened.
+    fun refreshPassportIfLoaded() {
+        if (account.isRegistered && passport != PassportData.empty) loadPassport(fresh = true)
     }
 
     fun loadProfileBits() = viewModelScope.launch {

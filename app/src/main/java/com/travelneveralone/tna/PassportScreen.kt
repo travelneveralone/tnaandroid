@@ -86,7 +86,7 @@ fun PassportScreen(app: AppModel) {
     var allShown by remember { mutableStateOf(false) }
     PullToRefreshBox(
         isRefreshing = refreshing,
-        onRefresh = { scope.launch { refreshing = true; app.loadPassport().join(); refreshing = false } },
+        onRefresh = { scope.launch { refreshing = true; app.loadPassport(fresh = true).join(); refreshing = false } },
         modifier = Modifier.fillMaxSize().background(TnaColor.bg),
     ) {
         if (!data.isLoaded) {

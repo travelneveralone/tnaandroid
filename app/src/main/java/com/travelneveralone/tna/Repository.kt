@@ -23,6 +23,12 @@ private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 /// answer offline or on a slow link. Write RPCs pass no TTL and are never cached.
 private const val READ_FRESH = 0
 
+/// Passport and «Мой год» cache window. `fresh` (pull-to-refresh, back to the
+/// app) asks the server past it: closing a departure changes the numbers, and
+/// the cached copy kept the old ones for up to five minutes (TNA-122). The
+/// cached copy is still the fallback offline.
+internal fun passportTtl(fresh: Boolean): Int = if (fresh) READ_FRESH else 300
+
 class TnaRepository(
     private val api: Postgrest,
     private val auth: AuthSession,
@@ -412,8 +418,8 @@ class TnaRepository(
         }.orEmpty()
 
     /// «Мой год с TNA». Null when the year has no finished trips (never a recap of zeroes).
-    suspend fun yearRecap(year: Int? = null): YearRecap? = runCatching {
-        val raw = api.rpc("my_year_recap", buildJsonObject { put("p_year", year) }.toString(), ttlSec = 300)
+    suspend fun yearRecap(year: Int? = null, fresh: Boolean = false): YearRecap? = runCatching {
+        val raw = api.rpc("my_year_recap", buildJsonObject { put("p_year", year) }.toString(), ttlSec = passportTtl(fresh))
         val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return@runCatching null
         val tours = obj.int("tours") ?: 0
         if (tours <= 0) return@runCatching null
@@ -748,8 +754,8 @@ class TnaRepository(
         )
     }.getOrNull()
 
-    suspend fun fetchPassport(displayName: String): PassportData {
-        val raw = api.rpc("my_passport", ttlSec = 300)
+    suspend fun fetchPassport(displayName: String, fresh: Boolean = false): PassportData {
+        val raw = api.rpc("my_passport", ttlSec = passportTtl(fresh))
         val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: throw TnaException("Паспорт не загрузился")
         val stats = obj["stats"]?.jsonObjectOrNull()
         val tours = stats?.int("tours") ?: 0
