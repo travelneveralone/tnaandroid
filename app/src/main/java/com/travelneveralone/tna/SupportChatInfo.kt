@@ -73,15 +73,14 @@ data class SupportChatInfo(
             } ?: "Сейчас не на связи. Написать можно уже сейчас - ответим, как вернёмся."
         }
 
-    /** «Ежедневно с 10:00 до 21:00 мск»; away from Moscow - in the phone's hours, «по твоему времени». */
+    /** «Ежедневно с 10:00 до 21:00 мск»; away from Moscow - in the phone's hours, with no zone mark. */
     fun hoursLine(now: Instant, device: ZoneId = ZoneId.systemDefault()): String {
         val open = minutes(opensAt) ?: return ""
         val close = minutes(closesAt) ?: return ""
         val day = now.atZone(zone).toLocalDate().atStartOfDay(zone)
         val start = day.plusMinutes(open.toLong()).toInstant()
         val end = day.plusMinutes(close.toLong()).toInstant()
-        val suffix = if (sameClock(now, device)) shortSuffix(now, device) else " по твоему времени"
-        return "$daysLabel с ${clock(start, device)} до ${clock(end, device)}$suffix"
+        return "$daysLabel с ${clock(start, device)} до ${clock(end, device)}${shortSuffix(now, device)}"
     }
 
     /** «Выходной: 1 января» - null when there are no days off. */

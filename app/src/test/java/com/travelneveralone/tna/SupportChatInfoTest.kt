@@ -51,7 +51,7 @@ class SupportChatInfoTest {
         // Moscow is UTC+3, Amsterdam in winter UTC+1.
         val now = msk(2026, 11, 25, 12)
         assertEquals("На связи до 19:00", info.headerStatus(now, amsterdam))
-        assertEquals("Ежедневно с 08:00 до 19:00 по твоему времени", info.hoursLine(now, amsterdam))
+        assertEquals("Ежедневно с 08:00 до 19:00", info.hoursLine(now, amsterdam))
         assertEquals("Ежедневно с 10:00 до 21:00 мск", info.hoursLine(now, moscow))
     }
 
