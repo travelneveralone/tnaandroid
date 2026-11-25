@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -391,7 +392,9 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
         }
         Box(Modifier.weight(1f)) {
             if (messages.isEmpty()) {
-                EmptyChatState(thread)
+                // Support: greeting, hours and ready first messages (TNA-116).
+                if (thread.isSupport) SupportEmptyState(app.supportInfo) { app.chatDraft = it }
+                else EmptyChatState(thread)
             } else {
                 val rows = messages.albumGrouped()
                 LazyColumn(
@@ -565,8 +568,10 @@ private fun ChatHeader(app: AppModel, thread: ChatThread) {
                 },
                 verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
-                Text(thread.title, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (subtitle.isNotBlank()) Text(subtitle, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (thread.isSupport) app.supportInfo.title else thread.title,
+                    color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (thread.isSupport) SupportStatusLine(app.supportInfo)
+                else if (subtitle.isNotBlank()) Text(subtitle, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!thread.isSupport) {
                 Box(
@@ -585,6 +590,95 @@ private fun ChatHeader(app: AppModel, thread: ChatThread) {
             ThreadAvatar(thread, 40)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(TnaColor.stroke))
+    }
+}
+
+/** «Now», refreshed every half minute: the support status flips at opening and
+ *  closing time without a reload (iOS: TimelineView .periodic 30 s). */
+@Composable
+private fun rememberTickingNow(): java.time.Instant {
+    val now by androidx.compose.runtime.produceState(java.time.Instant.now()) {
+        while (true) { delay(30_000); value = java.time.Instant.now() }
+    }
+    return now
+}
+
+/** Support chat header line: «На связи до 21:00 мск» with a green dot, or
+ *  «Не на связи · ответим завтра с 10:00» (iOS ChatView.supportStatusLine). */
+@Composable
+private fun SupportStatusLine(info: SupportChatInfo) {
+    val now = rememberTickingNow()
+    val online = info.availability(now).isOnline
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(if (online) TnaColor.success else TnaColor.subtle.copy(alpha = 0.5f)))
+        Spacer(Modifier.width(5.dp))
+        Text(info.headerStatus(now), color = if (online) TnaColor.success else TnaColor.subtle,
+            fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Empty support chat (TNA-116, iOS SupportEmptyState): who answers, when, and a
+ *  few ready first messages. A tapped hint goes into the message field, not
+ *  straight into the chat - the person can still edit it. */
+@Composable
+private fun SupportEmptyState(info: SupportChatInfo, onHint: (String) -> Unit) {
+    val now = rememberTickingNow()
+    Column(
+        Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier.size(96.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(Color.hex(0xFF8F5E), Color.hex(0xE63E00)))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(sfIcon("headset"), null, tint = Color.White, modifier = Modifier.size(38.dp))
+            info.teamPhotoUrl?.let { url ->
+                coil.compose.AsyncImage(model = url, contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+        }
+        Gap(18)
+        Text(info.greetingTitle, color = TnaColor.ink, fontSize = 19.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Gap(6)
+        Text(info.greetingText, color = TnaColor.subtle, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+        Gap(18)
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.elevated).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SupportInfoRow("clock", info.hoursLine(now))
+            info.daysOffLine?.let { SupportInfoRow("calendar", it) }
+            info.offlineNote(now)?.let { SupportInfoRow("moon.zzz", it) }
+        }
+        if (info.hints.isNotEmpty()) {
+            Gap(18)
+            Text("О чём написать", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp))
+            Gap(8)
+            info.hints.forEach { hint ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp)).background(TnaColor.surface)
+                        .pressable(0.98f) { onHint(hint) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(hint, color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Icon(sfIcon("text.bubble"), null, tint = TnaColor.accent, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupportInfoRow(icon: String, text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(sfIcon(icon), null, tint = TnaColor.accent, modifier = Modifier.size(16.dp).padding(top = 1.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
 

@@ -161,6 +161,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var avatarUrl by mutableStateOf<String?>(null)
     var avatarBusy by mutableStateOf(false)
     var chatDraft by mutableStateOf("")
+    /** Support chat name, hours and empty-chat content (TNA-116). Starts with the
+     *  built-in standard so the header and greeting show at once, even offline. */
+    var supportInfo by mutableStateOf(SupportChatInfo.standard)
     var reactionFor by mutableStateOf<UUID?>(null)
     /** Login phone: country chip + national digits (see PhoneField). */
     var loginCountry by mutableStateOf(PhoneCountry.preferred(deviceRegion()))
@@ -287,6 +290,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         openChat = thread
         messages = emptyList()
+        if (thread.isSupport) viewModelScope.launch {
+            val info = repo.supportChatInfo()
+            if (info != supportInfo) supportInfo = info
+        }
         viewModelScope.launch {
             // Never read or write the placeholder: resolve the real support thread first.
             val live = resolveThread(thread)

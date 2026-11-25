@@ -533,7 +533,7 @@ data class ChatThread(
 
     companion object {
         val supportPlaceholder = ChatThread(
-            title = "Поддержка TNA",
+            title = "Служба заботы TNA",
             subtitle = "Аня · на связи в рабочее время",
             lastMessage = "",
             time = "",

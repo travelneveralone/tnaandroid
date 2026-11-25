@@ -27,6 +27,14 @@ class TnaRepository(
     private val api: Postgrest,
     private val auth: AuthSession,
 ) {
+    /** Support chat name, hours and empty-chat content (TNA-116, 0192). Never
+     *  throws: offline the cached answer, with nothing cached - the standard. */
+    suspend fun supportChatInfo(): SupportChatInfo {
+        if (AppConfig.useMock) return SupportChatInfo.standard
+        val raw = runCatching { api.rpc("support_chat_info", ttlSec = 600) }.getOrNull()
+        return SupportChatInfo.parse(raw)
+    }
+
     /// [fresh]: no two-minute cache - the network answers, the saved copy only
     /// when it fails (pull to refresh, same as iOS fetchFreshTours, TNA-165).
     suspend fun fetchTours(fresh: Boolean = false): List<Tour> {
@@ -843,7 +851,7 @@ class TnaRepository(
             id = id,
             title = if (isDirect) otherName.ifBlank { "Личный чат" } else row.str("title").orEmpty(),
             subtitle = when (kind) {
-                "manager" -> "Аня · отвечаем быстро"
+                "manager" -> "на связи в рабочее время"
                 "group" -> "групповой чат"
                 "direct" -> "личные сообщения"
                 else -> "сообщество TNA"

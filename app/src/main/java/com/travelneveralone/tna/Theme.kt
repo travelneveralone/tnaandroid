@@ -1,6 +1,7 @@
 package com.travelneveralone.tna
 
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Restaurant
 import android.graphics.Typeface
@@ -118,6 +119,8 @@ object TnaColor {
     val accentSoft = Color.hex(Palette.accentSoft)
     val subtle = Color.hex(Palette.subtle)
     val stroke = ink.copy(alpha = 0.08f)
+    /** Calm green for "on" states - the support chat's «На связи» dot. */
+    val success = Color.hex(0x2F9E73)
     val danger = Color.hex(0xE0534E)
     val fire = Color.hex(0xE6432D)
     val accentBrush = Brush.linearGradient(
@@ -251,6 +254,8 @@ fun sfIcon(symbol: String): ImageVector {
         s.startsWith("tent") -> Icons.Filled.Terrain
         s.startsWith("binoculars") || s.startsWith("compass") -> Icons.Filled.Explore
         s.startsWith("book") -> Icons.AutoMirrored.Filled.MenuBook
+        s.startsWith("clock") -> Icons.Filled.Schedule
+        s.startsWith("text.bubble") -> Icons.AutoMirrored.Filled.Chat
         s.startsWith("bubble") -> Icons.AutoMirrored.Filled.Chat
         else -> Icons.Filled.Public
     }

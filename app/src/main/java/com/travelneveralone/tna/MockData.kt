@@ -159,7 +159,7 @@ object Mock {
     val threads = listOf(
         ChatThread(
             id = UUID.fromString("00000000-0000-0000-0000-00000000c0de"),
-            title = "Поддержка TNA",
+            title = "Служба заботы TNA",
             subtitle = "Аня · отвечаем в рабочее время",
             lastMessage = "Привет! По Камчатке остались 2 места на август 🌋",
             time = "14:02", unread = 2, icon = "headset",
