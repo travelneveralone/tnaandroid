@@ -414,7 +414,7 @@ fun ChatScreen(app: AppModel, thread: ChatThread) {
                         val last = newer == null || !sameGroup(message, newer)
                         val member = app.participant(message.authorId)
                         val shownName = ChatNames.author(message, member)
-                        val author = if (!thread.isSupport && !message.isMine && first) shownName else null
+                        val author = if (ChatNames.showsAuthor(message, first)) shownName else null
                         val roleTag = if (author != null && !message.asCompany) member?.roleTag else null
                         val openAuthor = {
                             message.authorId?.takeIf { !message.isMine && !message.asCompany && !thread.isSupport }?.let { uid ->

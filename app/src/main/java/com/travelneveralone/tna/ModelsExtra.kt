@@ -393,6 +393,11 @@ object ChatNames {
         return name
     }
 
+    /// Whether a bubble carries its sender's name: the first of a run from someone
+    /// else. The support chat too (TNA-148): «От имени TNA» reads «TNA», a reply
+    /// without it carries the staff member's own name (iOS showsAuthorName).
+    fun showsAuthor(message: Message, first: Boolean): Boolean = first && !message.isMine
+
     /// The active "@" token at the end of the draft; null when not mentioning.
     fun mentionQuery(draft: String): String? {
         val at = draft.lastIndexOf('@')

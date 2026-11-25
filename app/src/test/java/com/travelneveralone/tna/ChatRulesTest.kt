@@ -21,6 +21,14 @@ class ChatRulesTest {
 
     // MARK: - Names above bubbles
 
+    /** TNA-148: the support chat names who answered too («TNA» or the staff name). */
+    @Test fun bubblesFromOthersCarryTheAuthorInEveryChat() {
+        org.junit.Assert.assertTrue(ChatNames.showsAuthor(msg("Лера"), first = true))
+        org.junit.Assert.assertTrue(ChatNames.showsAuthor(msg("TNA", asCompany = true), first = true))
+        org.junit.Assert.assertFalse(ChatNames.showsAuthor(msg("Лера"), first = false))
+        org.junit.Assert.assertFalse(ChatNames.showsAuthor(msg("Лера").copy(isMine = true), first = true))
+    }
+
     @Test fun partnerIsNeverShownByName() {
         val partner = person("Иван Петров", role = "partner")
         assertEquals(ChatNames.PARTNER, ChatNames.author(msg("Иван Петров"), partner))
