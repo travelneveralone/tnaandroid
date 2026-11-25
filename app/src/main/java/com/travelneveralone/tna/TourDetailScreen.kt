@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -714,12 +716,16 @@ fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     var sent by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+    // The rating that went out picks the thank-you line: a clean 4-5★ goes live at once.
+    var sentRating by remember { mutableIntStateOf(5) }
     var photos by remember { mutableStateOf<List<ByteArray>>(emptyList()) }
+    val focus = LocalFocusManager.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         photos = uris.take(3).mapNotNull { uri -> context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = TnaColor.bg) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        // TNA-184: scrolls and pads for the keyboard so «Отправить» is always reachable.
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 20.dp).padding(bottom = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Оставить отзыв", color = TnaColor.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(if (sent) "Готово" else "Отмена", color = TnaColor.accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.pressable(onClick = onDismiss))
@@ -728,7 +734,7 @@ fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Verified, null, tint = TnaColor.accent, modifier = Modifier.size(54.dp))
                     Gap(12)
-                    Text("Спасибо! Отзыв появится после модерации.", color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                    Text(if (sentRating >= 4) "Спасибо! Отзыв появится на странице тура." else "Спасибо! Отзыв появится после проверки.", color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
                 }
             } else {
                 model.pendingTrip?.let { trip ->
@@ -741,7 +747,7 @@ fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
                             if (i <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
                             "$i",
                             tint = TnaColor.accent,
-                            modifier = Modifier.size(32.dp).pressable(0.9f) { rating = i },
+                            modifier = Modifier.size(32.dp).pressable(0.9f) { rating = i; focus.clearFocus() },
                         )
                     }
                 }
@@ -775,8 +781,9 @@ fun ReviewComposerSheet(model: TourDetailModel, onDismiss: () -> Unit) {
                     enabled = text.isNotBlank() && !model.submittingReview,
                 ) {
                     failed = false
+                    focus.clearFocus()
                     scope.launch {
-                        if (model.submitReview(rating, text.trim(), photos)) sent = true else failed = true
+                        if (model.submitReview(rating, text.trim(), photos)) { sentRating = rating; sent = true } else failed = true
                     }
                 }
             }
