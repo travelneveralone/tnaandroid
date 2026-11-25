@@ -692,6 +692,8 @@ private class IndividualRequest {
     var peopleCount by mutableIntStateOf(1)
     var friendCode by mutableStateOf("")
     var alreadyReferred by mutableStateOf(false)
+    /** This submission bound a friend's code - the success screen says so (TNA-186). */
+    var referralAccepted by mutableStateOf(false)
     var submitting by mutableStateOf(false)
     var done by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -733,6 +735,9 @@ fun IndividualSheet(app: AppModel) {
             BrandMark(90, app.isProd)
             Text("ЗАЯВКА У АНИ!", style = displayStyle(30))
             Text("Соберём маршрут «${form.destination}» и свяжемся в рабочее время", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+            if (form.referralAccepted) {
+                Text(REFERRAL_ACCEPTED_NOTE, color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            }
             Gap(20)
             PrimaryButton("Отлично!", icon = Icons.Filled.ThumbUp) { app.sheet = null }
         }
@@ -771,6 +776,7 @@ fun IndividualSheet(app: AppModel) {
                         val applied = app.repo.applyReferral(code)
                         if (applied != ReferralResult.Ok && applied != ReferralResult.Already) throw TnaException(applied.userMessage)
                         form.alreadyReferred = true
+                        form.referralAccepted = applied == ReferralResult.Ok
                     }
                     val details = listOfNotNull("Направление: ${form.destination}", "Даты: ${form.datesText}", form.cert.detailsLine)
                     app.repo.submitBooking(

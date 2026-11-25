@@ -624,6 +624,9 @@ data class BonusLine(
     val text: String get() = BonusCopy.line(this)
 }
 
+/** Success-screen line when THIS submission bound a friend's code (TNA-186). */
+const val REFERRAL_ACCEPTED_NOTE = "Код друга принят! 🎉 Скидка 6 000 ₽ на первую поездку - её видно в «Моих бронях»."
+
 enum class ReferralResult(val userMessage: String) {
     Ok("Код друга принят! 🎉"),
     Already("Код уже был применён раньше"),

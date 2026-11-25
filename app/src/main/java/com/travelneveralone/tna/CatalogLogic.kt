@@ -159,6 +159,8 @@ class BookingForm(
     var endDate by mutableStateOf<java.time.LocalDate?>(null)
     var friendCode by mutableStateOf("")
     var alreadyReferred by mutableStateOf(false)
+    /** This submission bound a friend's code - the success screen says so (TNA-186). */
+    var referralAccepted by mutableStateOf(false)
     var companions by mutableStateOf<List<TravelCompanion>>(emptyList())
     var isSubmitting by mutableStateOf(false)
     var isDone by mutableStateOf(false)

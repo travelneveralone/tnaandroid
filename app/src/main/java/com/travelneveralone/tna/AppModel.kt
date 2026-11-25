@@ -1047,6 +1047,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                         throw TnaException(applied.userMessage)
                     }
                     current.alreadyReferred = true
+                    current.referralAccepted = applied == ReferralResult.Ok
                 }
                 val departure = current.departure
                 if (current.isWaitlist && departure != null) {

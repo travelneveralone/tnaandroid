@@ -192,6 +192,9 @@ private fun BookingSuccess(app: AppModel, form: BookingForm) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 6.dp),
         )
+        if (form.referralAccepted) {
+            Text(REFERRAL_ACCEPTED_NOTE, color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 6.dp))
+        }
         Gap(12)
         if (app.account.isRegistered) {
             PrimaryButton("В чат с Аней", icon = Icons.AutoMirrored.Filled.Chat) { app.openManagerChat() }
