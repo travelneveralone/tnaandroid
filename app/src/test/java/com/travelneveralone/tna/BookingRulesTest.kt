@@ -88,6 +88,7 @@ class BookingRulesTest {
         // Drafts never ride along with a request.
         f.applyCompanions(listOf(filledCompanion("Мария"), TravelCompanion(lastName = "Черновик", firstName = "")))
         assertEquals(listOf("Мария Мария"), f.companions.map { it.fullName })
+        assertEquals("only complete people count", 1, f.peopleCount)
     }
 
     // MARK: - What the manager reads
