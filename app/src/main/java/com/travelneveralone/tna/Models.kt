@@ -702,7 +702,7 @@ data class GiftCertificate(
                 "PIN для активации: $pin",
                 "Номинал: $amountText",
             )
-            if (recipientName.isNotBlank()) lines += "Для: $recipientName"
+            if (recipientName.isNotBlank()) lines += "Кому: $recipientName"
             if (wish.isNotBlank()) lines += "«$wish»"
             expiresText?.let { lines += it.replaceFirstChar { c -> c.uppercase() } }
             lines += "Обменять на путешествие: travelneveralone.com"

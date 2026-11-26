@@ -348,12 +348,12 @@ class ModelRulesTest {
         assertTrue(text.contains("TNA-AAAA-2222"))
         assertTrue(text.contains("0421"))
         assertTrue(text.contains("50 000 ₽"))
-        assertTrue(text.contains("Для: Маша"))
+        assertTrue(text.contains("Кому: Маша"))
         assertTrue(text.contains("«С днём рождения!»"))
         assertTrue(text.contains("Действует до 8 марта 2027"))
 
         val bare = cert("paid", recipient = " ", wish = "").shareText
-        assertFalse(bare.contains("Для:"))
+        assertFalse(bare.contains("Кому:"))
         assertFalse(bare.contains("«"))
         assertFalse(bare.contains("Действует"))
 

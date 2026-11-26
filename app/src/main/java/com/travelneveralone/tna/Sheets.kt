@@ -970,7 +970,7 @@ private fun CertificateCard(cert: GiftCertificate, prod: Boolean) {
         }
         Text("ПОДАРОЧНЫЙ СЕРТИФИКАТ", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Text(cert.amountText, style = displayBrushStyle(44))
-        if (cert.recipientName.isNotBlank()) Text("Для: ${cert.recipientName}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        if (cert.recipientName.isNotBlank()) Text("Кому: ${cert.recipientName}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         if (cert.wish.isNotBlank()) Text("«${cert.wish}»", color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp)
         Row {
             Column(Modifier.weight(1f)) {

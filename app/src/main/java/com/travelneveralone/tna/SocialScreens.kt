@@ -406,7 +406,7 @@ fun CertificateShareCard(cert: GiftCertificate, prod: Boolean) {
         ) {
             Text("ПОДАРОЧНЫЙ СЕРТИФИКАТ", style = displayStyle(18, Color.White.copy(alpha = 0.9f)))
             Text(cert.amountText, style = displayStyle(52, Color.White), maxLines = 1)
-            if (cert.recipientName.isNotBlank()) Text("для ${cert.recipientName}", color = Color.White.copy(alpha = 0.95f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            if (cert.recipientName.isNotBlank()) Text("Кому: ${cert.recipientName}", color = Color.White.copy(alpha = 0.95f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
             if (cert.wish.isNotBlank()) Text("«${cert.wish}»", color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 4)
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.35f)))
             Row(verticalAlignment = Alignment.CenterVertically) {
