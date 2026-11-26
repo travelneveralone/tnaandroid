@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * Profile, passport and trip-pack rules (iOS ProfileExtrasTests, PublicProfileTests,
- * TripPackMapperTests, EmailVerify) plus the «Кто едет» block the manager reads
+ * TripPackMapperTests, EmailFormat, CompanionDraftTests) plus the «Кто едет» block the manager reads
  * (iOS CompanionDocFormatTests) and its round trip through ParsedBookingNote
  * (iOS BookingNoteParseTests).
  */
@@ -66,27 +66,60 @@ class ProfileRulesTest {
         assertTrue(NameDisplay.variants("Иванов", "", "Сергеевич").isEmpty())
     }
 
-    @Test fun emailVerifyResultFromServer() {
-        assertEquals(EmailVerifyResult.Ok, EmailVerifyResult.from(true, "wrong_code"))
-        assertEquals(EmailVerifyResult.WrongCode, EmailVerifyResult.from(false, "wrong_code"))
-        assertEquals(EmailVerifyResult.Expired, EmailVerifyResult.from(null, "expired"))
-        assertEquals(EmailVerifyResult.TooManyAttempts, EmailVerifyResult.from(false, "too_many_attempts"))
-        assertEquals(EmailVerifyResult.InvalidEmail, EmailVerifyResult.from(false, "invalid_email"))
-        assertEquals(EmailVerifyResult.SendFailed, EmailVerifyResult.from(false, "send_failed"))
-        assertEquals(EmailVerifyResult.Expired, EmailVerifyResult.from(false, "no_code"))
-        assertEquals(EmailVerifyResult.Cooldown, EmailVerifyResult.from(false, "cooldown"))
-        assertEquals(EmailVerifyResult.Error, EmailVerifyResult.from(false, null))
-        EmailVerifyResult.entries.forEach { assertTrue(it.userMessage.isNotBlank()) }
+    @Test fun emailFormatCheck() {
+        assertTrue(EmailFormat.isValid(""))
+        assertTrue(EmailFormat.isValid(" Slava@Example.com "))
+        assertTrue(EmailFormat.isValid("a.b+tag@mail.co.uk"))
+        listOf("not-an-email", "slava@example", "slava@.com", "slava@example.", "@example.com",
+            "sl ava@example.com", "a@b@example.com").forEach { assertFalse(it, EmailFormat.isValid(it)) }
+        assertEquals("slava@example.com", EmailFormat.normalized(" Slava@Example.COM "))
     }
 
-    @Test fun emailCooldownCarriesTheWait() {
-        assertEquals(EmailVerifyReply(EmailVerifyResult.Cooldown, 42), EmailVerifyReply.from(false, "cooldown", 42))
-        // No retry_after from the server: the usual 60 s pause.
-        assertEquals(60L, EmailVerifyReply.from(false, "cooldown", null).retryAfterSec)
-        assertEquals(1L, EmailVerifyReply.from(false, "cooldown", 0).retryAfterSec)
-        // Anything else has no wait.
-        assertEquals(0L, EmailVerifyReply.from(true, null, 42).retryAfterSec)
-        assertEquals(0L, EmailVerifyReply.from(false, "wrong_code", 42).retryAfterSec)
+    // MARK: - Companion drafts (iOS CompanionDraftTests)
+
+    @Test fun filledCompanionIsNotADraft() {
+        assertFalse(filledCompanion("Анна").isDraft)
+        assertNull(filledCompanion("Анна").missingHint)
+    }
+
+    @Test fun nameOnlyIsADraftListingWhatIsMissing() {
+        val c = TravelCompanion(lastName = "Иванов", firstName = "Пётр")
+        assertTrue(c.isDraft)
+        assertEquals(listOf(CompanionField.Birthday, CompanionField.Phone, CompanionField.DocKindField), c.missingFields)
+        assertTrue(c.missingHint!!.contains("дата рождения"))
+    }
+
+    @Test fun patronymicAndCitizenshipAreNotRequired() {
+        val c = filledCompanion("Анна").let { it.copy(patronymic = "", doc = it.doc.copy(citizenship = "")) }
+        assertFalse(c.isDraft)
+    }
+
+    @Test fun shortPhoneIsMissing() {
+        assertEquals(listOf(CompanionField.Phone), filledCompanion("Анна").copy(phone = "123").missingFields)
+    }
+
+    @Test fun domesticPassportNeedsIssuedByAndRegistration() {
+        val c = filledCompanion("Анна", DocKind.PassportRF)
+        assertFalse(c.isDraft)
+        assertEquals(
+            listOf(CompanionField.DocIssuedBy, CompanionField.DocRegistration),
+            c.copy(doc = c.doc.copy(issuedBy = "", registration = " ")).missingFields,
+        )
+    }
+
+    @Test fun foreignPassportNeedsExpiryButNotIssuedBy() {
+        val c = filledCompanion("Анна", DocKind.PassportIntl).let { it.copy(doc = it.doc.copy(issuedBy = "", registration = "")) }
+        assertFalse(c.isDraft)
+        assertEquals(listOf(CompanionField.DocExpiry), c.copy(doc = c.doc.copy(expiry = null)).missingFields)
+    }
+
+    @Test fun birthCertificateNeedsNumberAndIssueDate() {
+        val c = filledCompanion("Миша", DocKind.BirthCert).let { it.copy(doc = it.doc.copy(expiry = null, issuedBy = "", registration = "")) }
+        assertFalse(c.isDraft)
+        assertEquals(
+            listOf(CompanionField.DocNumber, CompanionField.DocIssued),
+            c.copy(doc = c.doc.copy(number = "", issued = null)).missingFields,
+        )
     }
 
     // MARK: - Someone else's passport (iOS PublicProfileTests)
@@ -258,3 +291,12 @@ class ProfileRulesTest {
         assertTrue(supportText(withPeople).endsWith("\n\n👥 Кто едет (1)\n--------\n1. Петрова Анна"))
     }
 }
+
+/** A companion with the whole minimal ticket data set (not a draft). */
+fun filledCompanion(name: String, kind: DocKind = DocKind.PassportIntl) = TravelCompanion(
+    lastName = name, firstName = name, birthday = "1990-05-01", phone = "+79991234567",
+    doc = IdentityDoc(
+        type = kind.raw, number = "75 1234567", citizenship = "Россия",
+        issued = "2020-01-10", expiry = "2030-01-10", issuedBy = "ОВД", registration = "Москва",
+    ),
+)

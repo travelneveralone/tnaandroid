@@ -283,46 +283,70 @@ object NameDisplay {
     }
 }
 
-enum class EmailVerifyResult(val userMessage: String) {
-    Ok("Почта подтверждена ✓"),
-    WrongCode("Неверный код"),
-    Expired("Код истёк - нужен новый"),
-    TooManyAttempts("Слишком много попыток"),
-    InvalidEmail("Неверный адрес почты"),
-    SendFailed("Не удалось отправить письмо"),
-    /// The server refused a new code for now (60 s pause or 5 codes a day, 0186).
-    /// The resend button counts down; this text is a fallback only.
-    Cooldown("Новый код можно запросить чуть позже"),
-    Error("Что-то пошло не так - можно повторить");
+/// Basic email format check - the address is stored as typed, without a
+/// confirmation code (0196). Same rule as iOS EmailFormat and the server's `set_my_email`.
+object EmailFormat {
+    /// Trimmed, lowercased form that is stored.
+    fun normalized(raw: String): String = raw.trim().lowercase()
 
-    companion object {
-        fun from(ok: Boolean?, error: String?): EmailVerifyResult = when {
-            ok == true -> Ok
-            error == "wrong_code" -> WrongCode
-            error == "expired" || error == "no_code" -> Expired
-            error == "too_many_attempts" -> TooManyAttempts
-            error == "invalid_email" -> InvalidEmail
-            error == "send_failed" -> SendFailed
-            error == "cooldown" -> Cooldown
-            else -> Error
-        }
+    /// Empty is valid (the field is optional); otherwise `x@y.z` without spaces.
+    fun isValid(raw: String): Boolean {
+        val e = normalized(raw)
+        if (e.isEmpty()) return true
+        if (e.length > 254 || e.any { it.isWhitespace() }) return false
+        val parts = e.split("@")
+        if (parts.size != 2 || parts[0].isEmpty()) return false
+        val domain = parts[1]
+        val dot = domain.lastIndexOf('.')
+        return dot > 0 && dot < domain.length - 1
     }
 }
 
-/// Answer of verify-email: the result plus, for [EmailVerifyResult.Cooldown],
-/// how many seconds until a new code may be requested (iOS `.cooldown(seconds:)`).
-data class EmailVerifyReply(val result: EmailVerifyResult, val retryAfterSec: Long = 0) {
-    companion object {
-        /// Resend pause after a sent code; same as login SMS ([CodeCooldown.RESEND_SECONDS]).
-        const val RESEND_SECONDS = CodeCooldown.RESEND_SECONDS
-
-        fun from(ok: Boolean?, error: String?, retryAfter: Int?): EmailVerifyReply {
-            val result = EmailVerifyResult.from(ok, error)
-            val wait = if (result == EmailVerifyResult.Cooldown) (retryAfter ?: RESEND_SECONDS.toInt()).coerceAtLeast(1).toLong() else 0L
-            return EmailVerifyReply(result, wait)
-        }
-    }
+/// A field a companion must have before their data can go to a manager.
+enum class CompanionField(val title: String) {
+    LastName("фамилия"),
+    FirstName("имя"),
+    Birthday("дата рождения"),
+    Phone("телефон"),
+    DocKindField("документ"),
+    DocNumber("номер документа"),
+    DocIssued("дата выдачи"),
+    DocIssuedBy("кем выдан"),
+    DocRegistration("прописка"),
+    DocExpiry("срок действия"),
 }
+
+/// What is still missing for the minimal ticket data set (iOS TravelCompanion.missingFields).
+/// Patronymic is not required; citizenship is never missing (empty = Россия); document
+/// fields follow the chosen kind.
+val TravelCompanion.missingFields: List<CompanionField>
+    get() {
+        val out = mutableListOf<CompanionField>()
+        if (lastName.isBlank()) out += CompanionField.LastName
+        if (firstName.isBlank()) out += CompanionField.FirstName
+        if (birthday.isNullOrBlank()) out += CompanionField.Birthday
+        if (PhoneNumber.digits(phone).length < 10) out += CompanionField.Phone
+        val kind = doc.kind
+        if (kind == null) {
+            out += CompanionField.DocKindField
+            return out
+        }
+        if (doc.number.isBlank()) out += CompanionField.DocNumber
+        if (doc.issued.isNullOrBlank()) out += CompanionField.DocIssued
+        if (kind.hasInternalFields) {
+            if (doc.issuedBy.isBlank()) out += CompanionField.DocIssuedBy
+            if (doc.registration.isBlank()) out += CompanionField.DocRegistration
+        }
+        if (kind.hasExpiry && doc.expiry.isNullOrBlank()) out += CompanionField.DocExpiry
+        return out
+    }
+
+/// Draft = saved, but can't be picked for a booking or sent to the support chat yet.
+val TravelCompanion.isDraft: Boolean get() = missingFields.isNotEmpty()
+
+/// «Не хватает: дата рождения, номер документа» - null when complete.
+val TravelCompanion.missingHint: String?
+    get() = missingFields.takeIf { it.isNotEmpty() }?.let { m -> "Не хватает: " + m.joinToString(", ") { it.title } }
 
 /// Avatar crop geometry (iOS AvatarCropSheet): the photo fills a circle of diameter d,
 /// zoomed by scale and shifted by (x, y) from the circle centre.

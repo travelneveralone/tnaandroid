@@ -78,13 +78,16 @@ class BookingRulesTest {
     @Test fun companionsSetThePeopleCountWithinTheSeats() {
         val f = form(Departure(label = "x", spotsLeft = 2))
         assertEquals("Добавить данные тех, для кого бронируешь", f.companionSummary)
-        val three = List(3) { TravelCompanion(lastName = "Л$it", firstName = "И$it") }
+        val three = List(3) { filledCompanion("Л$it") }
         f.applyCompanions(three)
         assertEquals(2, f.peopleCount)
         assertEquals("Выбрано: 3", f.companionSummary)
         f.peopleCount = 2
         f.applyCompanions(emptyList())
         assertEquals("cleared list keeps the count", 2, f.peopleCount)
+        // Drafts never ride along with a request.
+        f.applyCompanions(listOf(filledCompanion("Мария"), TravelCompanion(lastName = "Черновик", firstName = "")))
+        assertEquals(listOf("Мария Мария"), f.companions.map { it.fullName })
     }
 
     // MARK: - What the manager reads

@@ -42,12 +42,12 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UnfoldMore
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -88,7 +88,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -110,6 +109,7 @@ fun EditProfileSheet(app: AppModel) {
     var first by remember { mutableStateOf(initial.firstName) }
     var patronymic by remember { mutableStateOf(initial.patronymic) }
     var city by remember { mutableStateOf(initial.city) }
+    var email by remember { mutableStateOf(initial.email) }
     var birthday by remember { mutableStateOf(initial.birthday.ifBlank { null }) }
     var display by remember { mutableStateOf(app.account.name) }
     var doc by remember {
@@ -121,7 +121,8 @@ fun EditProfileSheet(app: AppModel) {
     val isPartner = app.role == UserRole.Partner
     val needsTicketData = app.role.canBookAndEarn
     val variants = NameDisplay.variants(last, first, patronymic)
-    val canSave = display.trim().length >= 2 || first.trim().length >= 2
+    val emailValid = EmailFormat.isValid(email)
+    val canSave = (display.trim().length >= 2 || first.trim().length >= 2) && emailValid
     SheetColumn(spacing = 16) {
         Text("ПРОФИЛЬ", style = displayStyle(28))
         AvatarRow(app, display)
@@ -137,7 +138,7 @@ fun EditProfileSheet(app: AppModel) {
         }
         BookingField("Город проживания", city, capitalization = KeyboardCapitalization.Words) { city = it }
         if (needsTicketData) {
-            EmailBox(app)
+            EmailField(email, emailValid) { email = it }
             DocumentFields(doc) { doc = it }
         }
         SubmitButton("Сохранить", busy = saving, enabled = canSave) {
@@ -150,6 +151,8 @@ fun EditProfileSheet(app: AppModel) {
                     patronymic = patronymic.trim(),
                     city = city.trim(),
                     birthday = birthday.orEmpty(),
+                    email = EmailFormat.normalized(email),
+                    emailVerified = app.profile.emailVerified && EmailFormat.normalized(email) == app.profile.email,
                     doc = doc,
                 )
                 val error = app.saveProfileNow(draft, name)
@@ -257,99 +260,19 @@ fun LabeledBox(title: String, modifier: Modifier = Modifier, content: @Composabl
     }
 }
 
-// MARK: - Email verification
+// MARK: - Email
 
+/// Saved as typed - only a format check, no confirmation code (0196, iOS emailField).
 @Composable
-private fun EmailBox(app: AppModel) {
-    val scope = rememberCoroutineScope()
-    var input by remember { mutableStateOf(app.profile.email) }
-    var verified by remember { mutableStateOf(app.profile.emailVerified) }
-    var codeSent by remember { mutableStateOf(false) }
-    var code by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    /// Epoch ms when the server takes a new code request again (iOS resendAvailableAt).
-    var resendAt by remember { mutableStateOf(0L) }
-    // Re-read every second so the resend countdown ticks.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(1000)
-        }
-    }
-    val wait = ((resendAt - now + 999) / 1000).coerceAtLeast(0)
-    val trimmed = input.trim()
-    val canRequest = trimmed.contains("@") && trimmed.contains(".") && !busy && wait == 0L
-    fun request() {
-        if (wait > 0) return
-        busy = true
-        message = null
-        scope.launch {
-            val reply = app.repo.requestEmailCode(trimmed.lowercase())
-            busy = false
-            when (reply.result) {
-                EmailVerifyResult.Ok -> {
-                    codeSent = true
-                    code = ""
-                    resendAt = System.currentTimeMillis() + EmailVerifyReply.RESEND_SECONDS * 1000
-                }
-                // The button counts down; no frozen "через 0:42" text under it.
-                EmailVerifyResult.Cooldown -> resendAt = System.currentTimeMillis() + reply.retryAfterSec * 1000
-                else -> message = reply.result.userMessage
-            }
-        }
-    }
+private fun EmailField(value: String, valid: Boolean, onChange: (String) -> Unit) {
     LabeledBox("Email") {
-        if (verified) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Verified, null, tint = Color.hex(0x2E9E5B), modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("подтверждён", color = Color.hex(0x2E9E5B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
+        PlainInput(value, "you@example.com", KeyboardType.Email, onChange = onChange)
+        if (!valid) {
+            Text(
+                "Похоже, в адресе ошибка - нужен вид name@example.com",
+                color = Color.hex(0xE0534E), fontSize = 12.sp, fontWeight = FontWeight.Medium,
+            )
         }
-        PlainInput(input, "you@example.com", KeyboardType.Email, enabled = !verified) {
-            input = it
-            if (codeSent) { codeSent = false; code = ""; message = null }
-        }
-        if (!verified) {
-            if (codeSent) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { PlainInput(code, "Код из письма", KeyboardType.NumberPassword) { code = it.filter(Char::isDigit).take(8) } }
-                    Spacer(Modifier.width(10.dp))
-                    PillAction(if (busy) "…" else "Подтвердить", enabled = !busy && code.trim().length >= 4) {
-                        busy = true
-                        message = null
-                        scope.launch {
-                            val result = app.repo.confirmEmailCode(code)
-                            busy = false
-                            message = result.userMessage
-                            if (result == EmailVerifyResult.Ok) {
-                                verified = true
-                                codeSent = false
-                                app.profile = app.profile.copy(email = trimmed.lowercase(), emailVerified = true)
-                            }
-                        }
-                    }
-                }
-                Text(
-                    if (wait > 0) "Отправить код заново через ${CodeCooldown.countdown(wait)}" else "Отправить код заново",
-                    color = if (wait > 0) TnaColor.subtle else TnaColor.accent,
-                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.pressable(enabled = !busy && wait == 0L) { request() },
-                )
-            } else {
-                PillAction(
-                    when {
-                        busy -> "Отправляю…"
-                        wait > 0 -> "Подтвердить почту через ${CodeCooldown.countdown(wait)}"
-                        else -> "Подтвердить почту"
-                    },
-                    enabled = canRequest,
-                ) { request() }
-            }
-        }
-        message?.let { Text(it, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
     }
 }
 
@@ -368,21 +291,6 @@ private fun PlainInput(value: String, placeholder: String, keyboard: KeyboardTyp
             modifier = Modifier.fillMaxWidth(),
         )
     }
-}
-
-@Composable
-private fun PillAction(title: String, enabled: Boolean, onClick: () -> Unit) {
-    Text(
-        title,
-        color = Color.White,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier
-            .pressable(0.95f, enabled = enabled, onClick = onClick)
-            .clip(CircleShape)
-            .background(if (enabled) TnaColor.accent else TnaColor.accent.copy(alpha = 0.5f))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
 }
 
 // MARK: - Dates
@@ -573,8 +481,14 @@ private fun CompanionRow(person: TravelCompanion, onTap: () -> Unit) {
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(person.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            subtitle?.let { Text(it, color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(person.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false))
+                if (person.isDraft) DraftBadge()
+            }
+            val hint = person.missingHint
+            if (hint != null) Text(hint, color = TnaColor.subtle, fontSize = 13.sp)
+            else subtitle?.let { Text(it, color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1) }
         }
         Icon(Icons.Filled.ChevronRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
     }
@@ -600,6 +514,7 @@ private fun CompanionEditor(app: AppModel, start: TravelCompanion, isNew: Boolea
         }
         BookingField("Телефон", person.phone, keyboard = KeyboardType.Phone) { person = person.copy(phone = it) }
         DocumentFields(person.doc) { person = person.copy(doc = it) }
+        person.missingHint?.let { DraftNote(it) }
         SubmitButton("Сохранить", busy = busy, enabled = person.lastName.isNotBlank() || person.firstName.isNotBlank()) {
             busy = true
             scope.launch {
@@ -654,13 +569,20 @@ private val selfId: java.util.UUID = java.util.UUID.fromString("00000000-0000-00
 @Composable
 fun TicketDataSheet(app: AppModel, onDismiss: () -> Unit, onSend: (List<TravelCompanion>) -> Unit) {
     var selected by remember { mutableStateOf<Set<java.util.UUID>>(emptySet()) }
-    var adding by remember { mutableStateOf(false) }
+    /// Companion open in the editor: a new one, or a draft being finished (iOS EditorRoute).
+    var editing by remember { mutableStateOf<TravelCompanion?>(null) }
+    var editingIsNew by remember { mutableStateOf(false) }
+    var touched by remember { mutableStateOf<Set<java.util.UUID>>(emptySet()) }
     var known by remember { mutableStateOf<Set<java.util.UUID>?>(null) }
     LaunchedEffect(Unit) { app.loadCompanions() }
-    // A companion added from here comes back selected.
+    // A companion added or finished from here comes back selected - unless still a draft.
     LaunchedEffect(app.companions) {
         val ids = app.companions.map { it.id }.toSet()
-        known?.let { before -> selected = selected + (ids - before) }
+        known?.let { before ->
+            val fresh = app.companions.filter { (it.id !in before || it.id in touched) && !it.isDraft }.map { it.id }
+            selected = selected + fresh
+        }
+        selected = selected - app.companions.filter { it.isDraft }.map { it.id }.toSet()
         known = ids
     }
     val profile = app.profile
@@ -679,8 +601,9 @@ fun TicketDataSheet(app: AppModel, onDismiss: () -> Unit, onSend: (List<TravelCo
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = TnaColor.bg,
     ) {
-        if (adding) {
-            CompanionEditor(app, remember { TravelCompanion(lastName = "", firstName = "") }, isNew = true) { adding = false }
+        val open = editing
+        if (open != null) {
+            CompanionEditor(app, open, isNew = editingIsNew) { editing = null }
             return@ModalBottomSheet
         }
         SheetColumn(spacing = 10) {
@@ -693,41 +616,85 @@ fun TicketDataSheet(app: AppModel, onDismiss: () -> Unit, onSend: (List<TravelCo
                 }
             }
             entries.forEach { c ->
-                val isOn = c.id in selected
+                val isSelf = c.id == selfId
+                val draft = c.isDraft
+                val isOn = c.id in selected && !draft
                 val shape = RoundedCornerShape(16.dp)
                 Row(
-                    Modifier.fillMaxWidth().pressable(0.99f) { selected = if (isOn) selected - c.id else selected + c.id }
+                    Modifier.fillMaxWidth().pressable(0.99f) {
+                        when {
+                            // A draft can't be sent: tap opens the editor to finish it
+                            // (own profile is finished in the profile screen).
+                            draft && isSelf -> Unit
+                            draft -> { touched = touched + c.id; editingIsNew = false; editing = c }
+                            else -> selected = if (isOn) selected - c.id else selected + c.id
+                        }
+                    }
                         .clip(shape).background(TnaColor.surface)
                         .border(1.dp, if (isOn) TnaColor.accent.copy(alpha = 0.5f) else TnaColor.stroke, shape).padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        if (isOn) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null,
+                        when {
+                            draft -> Icons.Filled.Edit
+                            isOn -> Icons.Filled.CheckCircle
+                            else -> Icons.Filled.RadioButtonUnchecked
+                        }, null,
                         tint = if (isOn) TnaColor.accent else TnaColor.subtle, modifier = Modifier.size(24.dp),
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(c.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                            if (c.id == selfId) Text("ты", color = TnaColor.accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                            if (isSelf) Text("ты", color = TnaColor.accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                            if (draft) DraftBadge()
                         }
-                        Text(CompanionFormat.line(c), color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1)
+                        val hint = c.missingHint
+                        if (hint != null) Text(if (isSelf) "Дозаполни профиль. $hint" else hint, color = TnaColor.subtle, fontSize = 13.sp)
+                        else Text(CompanionFormat.line(c), color = TnaColor.subtle, fontSize = 13.sp, maxLines = 1)
                     }
                 }
             }
             Row(
-                Modifier.fillMaxWidth().pressable(0.99f) { adding = true }.dashedOutline(TnaColor.accent.copy(alpha = 0.5f), 16).padding(14.dp),
+                Modifier.fillMaxWidth().pressable(0.99f) { editingIsNew = true; editing = TravelCompanion(lastName = "", firstName = "") }.dashedOutline(TnaColor.accent.copy(alpha = 0.5f), 16).padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Filled.Add, null, tint = TnaColor.accent, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(10.dp))
                 Text("Добавить попутчика", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
-            PrimaryButton(if (selected.isEmpty()) "Выбери, кого отправить" else "Отправить (${selected.size})", enabled = selected.isNotEmpty()) {
-                onSend(entries.filter { it.id in selected })
+            val chosen = entries.filter { it.id in selected && !it.isDraft }
+            PrimaryButton(if (chosen.isEmpty()) "Выбери, кого отправить" else "Отправить (${chosen.size})", enabled = chosen.isNotEmpty()) {
+                onSend(chosen)
                 onDismiss()
             }
         }
+    }
+}
+
+/// «черновик» chip: a companion saved without the minimal ticket data (iOS DraftBadge).
+@Composable
+fun DraftBadge() {
+    Text(
+        "черновик",
+        color = TnaColor.subtle, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+        modifier = Modifier.clip(CircleShape).background(TnaColor.subtle.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/// Saving a draft is fine - this only explains why it can't be picked or sent yet.
+@Composable
+private fun DraftNote(hint: String) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Это черновик", color = TnaColor.ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Сохранить можно и так. Выбрать попутчика для брони или отправить его данные в чат получится, когда всё будет заполнено. $hint.",
+            color = TnaColor.subtle, fontSize = 13.sp,
+        )
     }
 }
 

@@ -300,16 +300,24 @@ private fun CompanionsRow(app: AppModel, form: BookingForm) {
                     )
                 }
                 app.companions.forEachIndexed { index, person ->
-                    val chosen = form.companions.any { it.id == person.id }
+                    val draft = person.isDraft
+                    val chosen = !draft && form.companions.any { it.id == person.id }
                     Row(
-                        Modifier.fillMaxWidth().pressable(0.99f) {
+                        Modifier.fillMaxWidth().pressable(0.99f, enabled = !draft) {
                             form.applyCompanions(if (chosen) form.companions.filter { it.id != person.id } else form.companions + person)
                         }.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(if (chosen) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null, tint = if (chosen) TnaColor.accent else TnaColor.subtle.copy(alpha = 0.5f), modifier = Modifier.size(22.dp))
+                        Icon(if (chosen) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null, tint = if (chosen) TnaColor.accent else TnaColor.subtle.copy(alpha = if (draft) 0.25f else 0.5f), modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text(person.fullName.ifBlank { "Без имени" }, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        // A draft is listed but can't be chosen - finish it in profile → «Попутчики».
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(person.fullName.ifBlank { "Без имени" }, color = if (draft) TnaColor.subtle else TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                if (draft) DraftBadge()
+                            }
+                            person.missingHint?.let { Text("$it. Дозаполни в профиле → «Попутчики»", color = TnaColor.subtle, fontSize = 12.sp) }
+                        }
                     }
                     if (index < app.companions.lastIndex) RowDivider()
                 }

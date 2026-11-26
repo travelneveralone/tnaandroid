@@ -190,6 +190,8 @@ class BookingForm(
         get() = if (companions.isEmpty()) "Добавить данные тех, для кого бронируешь" else "Выбрано: ${companions.size}"
 
     fun applyCompanions(chosen: List<TravelCompanion>) {
+        // Drafts never ride along with a request (iOS BookingViewModel.applyCompanions).
+        val chosen = chosen.filter { !it.isDraft }
         companions = chosen
         if (chosen.isNotEmpty()) peopleCount = chosen.size.coerceIn(1, maxPeople)
     }

@@ -1068,6 +1068,8 @@ class TnaRepository(
             put("birthday", draft.birthday.trim().ifBlank { null })
             putDoc(draft.doc)
         }.toString())
+        // Email is a guarded column (no direct PATCH): saved as typed through the RPC (0196).
+        api.rpc("set_my_email", buildJsonObject { put("p_email", EmailFormat.normalized(draft.email)) }.toString())
     }
 
     /// Display name: RPC mirrors it into customers.name; if the RPC is unavailable, write
@@ -1122,25 +1124,6 @@ class TnaRepository(
                 fill()
             }.toString()))
     }
-
-    /// Email is verified by a code (verify-email edge function), never saved directly.
-    suspend fun requestEmailCode(email: String): EmailVerifyReply = verifyEmail(buildJsonObject {
-        put("action", "request")
-        put("email", email.trim())
-    }.toString())
-
-    suspend fun confirmEmailCode(code: String): EmailVerifyResult = verifyEmail(buildJsonObject {
-        put("action", "confirm")
-        put("code", code.trim())
-    }.toString()).result
-
-    /// Reads the body whatever the status: refusals (wrong code 400, pause 429)
-    /// come with a reason the person must see, not «Сервер ответил 400».
-    private suspend fun verifyEmail(body: String): EmailVerifyReply = runCatching {
-        val raw = api.functionBody("verify-email", body) ?: return@runCatching EmailVerifyReply(EmailVerifyResult.Error)
-        val obj = json.parseToJsonElement(raw).jsonObjectOrNull()
-        EmailVerifyReply.from(obj?.bool("ok"), obj?.str("error"), obj?.int("retry_after"))
-    }.getOrDefault(EmailVerifyReply(EmailVerifyResult.Error))
 
     suspend fun fetchPrefs(): NotificationPrefs {
         val raw = api.get("notification_prefs", listOf(
