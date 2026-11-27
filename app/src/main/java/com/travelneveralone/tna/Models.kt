@@ -680,10 +680,14 @@ data class GiftCertificate(
     val paymentUrl: String? = null,
     val pin: String = "",
     val expiresOn: String? = null,
+    /** Money returned through the bank (0200): cancelled, but not "just cancelled". */
+    val refunded: Boolean = false,
 ) {
     val amountText: String get() = Money.rubles(amount)
+    /** Still worth something: active or waiting for payment. The rest is history. */
+    val isLive: Boolean get() = status == "paid" || status == "pending"
     val statusTitle: String
-        get() = when (status) {
+        get() = if (refunded) "Деньги возвращены" else when (status) {
             "paid" -> "Активен"
             "redeemed" -> "Использован"
             "expired" -> "Срок истёк"

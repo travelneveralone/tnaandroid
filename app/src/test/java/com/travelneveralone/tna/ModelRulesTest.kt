@@ -364,6 +364,15 @@ class ModelRulesTest {
         assertTrue(message.contains("travelneveralone.com"))
     }
 
+    @Test fun usedRefundedAndExpiredCertificatesAreHistoryAndARefundSaysSo() {
+        fun c(status: String, refunded: Boolean = false) =
+            GiftCertificate(UUID.randomUUID(), "TNA-X", 1_000, "", "", status, refunded = refunded)
+        assertTrue(c("paid").isLive && c("pending").isLive)
+        assertFalse(c("redeemed").isLive || c("expired").isLive || c("cancelled").isLive)
+        assertEquals("Деньги возвращены", c("cancelled", refunded = true).statusTitle)
+        assertEquals("Отменён", c("cancelled").statusTitle)
+    }
+
     @Test fun dataIssuesOpenTheSupportChatWithAGreeting() {
         DataIssue.entries.forEach {
             assertTrue(it.title.isNotBlank())

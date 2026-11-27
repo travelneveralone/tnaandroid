@@ -91,6 +91,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -809,7 +810,9 @@ private class CertificatePurchase {
     var wish by mutableStateOf("")
     var name by mutableStateOf("")
     var phone by mutableStateOf("+7 ")
+    /** "list" own certificates + «Подарить», "form", "awaiting", "done" (iOS Stage). */
     var stage by mutableStateOf("form")
+    var opened = false
     var certificate by mutableStateOf<GiftCertificate?>(null)
     var mine by mutableStateOf<List<GiftCertificate>>(emptyList())
     var submitting by mutableStateOf(false)
@@ -831,6 +834,9 @@ fun CertificateSheet(app: AppModel) {
         state.name = app.account.name
         if (app.account.phone.isNotBlank()) state.phone = app.account.phone
         state.mine = app.repo.myCertificates()
+        // Someone who already has certificates lands on them, not on a form.
+        if (!state.opened && state.mine.isNotEmpty() && state.stage == "form") state.stage = "list"
+        state.opened = true
     }
     fun open(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     fun check() {
@@ -879,7 +885,30 @@ fun CertificateSheet(app: AppModel) {
             }
             PrimaryButton("Готово", icon = Icons.Filled.ThumbUp) { app.sheet = null }
         }
+        "list" -> SheetColumn {
+            TwoLineTitle("ПОДАРОЧНЫЕ", "СЕРТИФИКАТЫ 🎁", 32, 32)
+            GiftCta { state.error = null; state.stage = "form" }
+            val live = state.mine.filter { it.isLive }
+            val past = state.mine.filter { !it.isLive }
+            if (live.isNotEmpty()) {
+                CertSectionTitle("МОИ СЕРТИФИКАТЫ")
+                live.forEach { cert -> LiveCertificateCard(cert) { viewing = cert } }
+            }
+            if (past.isNotEmpty()) {
+                CertSectionTitle("ПРОШЛЫЕ")
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.surface).border(1.dp, TnaColor.stroke, RoundedCornerShape(16.dp))) {
+                    past.forEachIndexed { i, cert ->
+                        PastCertificateRow(cert) { viewing = cert }
+                        if (i < past.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(1.dp).background(TnaColor.stroke))
+                    }
+                }
+            }
+        }
         else -> SheetColumn {
+            if (state.mine.isNotEmpty()) {
+                Text("‹ Мои сертификаты", color = TnaColor.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.pressable { state.stage = "list" })
+            }
             TwoLineTitle("ПОДАРОЧНЫЙ", "СЕРТИФИКАТ 🎁", 32, 32)
             Text("Электронный сертификат с уникальным номером и PIN-кодом. Оплати онлайн - и сразу получишь карточку, которую можно отправить получателю. Действует 1 год.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -925,23 +954,6 @@ fun CertificateSheet(app: AppModel) {
                     state.mine = app.repo.myCertificates()
                 }
             }
-            if (state.mine.isNotEmpty()) {
-                Text("Мои сертификаты", color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                state.mine.forEach { cert ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TnaColor.surface).pressable(0.98f) { viewing = cert }.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Filled.CardGiftcard, null, tint = TnaColor.accent, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(cert.code ?: "-", color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text(listOfNotNull(cert.amountText, cert.statusTitle, cert.expiresText).joinToString(" · "), color = TnaColor.subtle, fontSize = 12.sp)
-                        }
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
             ConsentFooter()
         }
     }
@@ -953,6 +965,67 @@ fun CertificateSheet(app: AppModel) {
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
+    }
+}
+
+@Composable
+private fun CertSectionTitle(text: String) {
+    Text(text, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+}
+
+/// The one way to buy from the list: a big friendly card, not a form (iOS giftCTA).
+@Composable
+private fun GiftCta(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(TnaColor.accentBrush).pressable(0.98f, onClick = onClick).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.CardGiftcard, null, tint = Color.White, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Подарить путешествие", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Электронный сертификат, действует год", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+/// An active or unpaid certificate as a small gift card (iOS liveCard).
+@Composable
+private fun LiveCertificateCard(cert: GiftCertificate, onClick: () -> Unit) {
+    val bg = if (cert.status == "pending") Brush.linearGradient(listOf(TnaColor.ink.copy(alpha = 0.75f), TnaColor.ink.copy(alpha = 0.75f))) else TnaColor.accentBrush
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(bg).pressable(0.98f, onClick = onClick).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(cert.amountText, style = displayStyle(30, Color.White), modifier = Modifier.weight(1f))
+            Text(cert.statusTitle.uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(horizontal = 9.dp, vertical = 4.dp))
+        }
+        if (cert.recipientName.isNotBlank()) Text("Кому: ${cert.recipientName}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Row {
+            Text(cert.code.orEmpty(), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+            Text(if (cert.status == "pending") "ждёт оплаты" else cert.expiresText.orEmpty(), color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/// Used, refunded, annulled or expired: one quiet line each (iOS pastRow).
+@Composable
+private fun PastCertificateRow(cert: GiftCertificate, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().pressable(0.99f, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(cert.amountText, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                textDecoration = if (cert.status == "cancelled") TextDecoration.LineThrough else null)
+            Text(listOfNotNull(cert.recipientName.takeIf { it.isNotBlank() }?.let { "Кому: $it" }, cert.code).joinToString(" · "),
+                color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+        Text(cert.statusTitle, color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
     }
 }
 

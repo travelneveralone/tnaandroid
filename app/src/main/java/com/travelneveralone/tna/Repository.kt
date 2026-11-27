@@ -1251,7 +1251,7 @@ class TnaRepository(
 
     suspend fun myCertificates(): List<GiftCertificate> = runCatching {
         val raw = api.get("gift_certificates", listOf(
-            "select" to "id,code,pin,amount,status,recipient_name,wish,expires_on,payment_url",
+            "select" to "id,code,pin,amount,status,recipient_name,wish,expires_on,payment_url,refunded_at",
             "order" to "created_at.desc",
         ), ttlSec = null)
         json.parseToJsonElement(raw).arrayOrEmpty().mapNotNull { it.jsonObjectOrNull()?.let(::certificate) }
@@ -1269,6 +1269,7 @@ class TnaRepository(
             paymentUrl = row.str("payment_url"),
             pin = row.str("pin").orEmpty(),
             expiresOn = row.str("expires_on"),
+            refunded = row.str("refunded_at") != null,
         )
     }
 
