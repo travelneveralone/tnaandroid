@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.material.icons.filled.FolderCopy
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -507,74 +511,101 @@ private fun PromoCard(app: AppModel) {
     }
 }
 
+// Profile menu split into groups so the everyday screens are not mixed with
+// legal texts: personal (no header) → settings → help/about. Legal documents
+// fold into one expandable «Документы» row. Mirrors iOS ProfileView.settingsList.
 @Composable
 private fun SettingsList(app: AppModel, onIssue: () -> Unit) {
     val context = LocalContext.current
     val registered = app.account.isRegistered
     val lockScope = rememberCoroutineScope()
+    var documentsExpanded by remember { mutableStateOf(false) }
     fun open(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-    val shape = RoundedCornerShape(20.dp)
-    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape)) {
-        ProfileRow(Icons.Filled.Notifications, "Уведомления") { app.requireAccount { app.sheet = Sheet.Notifications } }
-        // App lock: signed-in users on devices with biometrics.
-        val lockTitle = app.appLock.kind.title
-        if (app.appLock.isOfferable && lockTitle != null) {
-            ProfileDivider()
-            ProfileToggleRow(app.appLock.kind.icon, "Вход по $lockTitle", app.appLock.isEnabled) { on ->
-                lockScope.launch { app.appLock.setEnabled(on) }
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        // Personal: travellers only (partners don't book), so the card hides for them.
+        if (app.role.canBookAndEarn) {
+            SettingsGroup(null) {
+                if (registered) {
+                    ProfileRow(Icons.Filled.CreditCard, "Мои брони и оплаты") { app.loadBookings(); app.sheet = Sheet.MyBookings }
+                    ProfileDivider()
+                    ProfileRow(Icons.Filled.Group, "Попутчики") { app.loadCompanions(); app.sheet = Sheet.Companions }
+                    ProfileDivider()
+                    ProfileRow(Icons.Filled.Public, "Мои страны") { app.loadCountries(); app.sheet = Sheet.Countries }
+                    ProfileDivider()
+                }
+                ProfileRow(Icons.Filled.CardGiftcard, "Подарочные сертификаты") { app.requireAccount { app.sheet = Sheet.Certificate } }
             }
         }
-        // Several phones per person: any of them signs into this account.
-        // Everyone signs in by phone, staff included.
-        if (registered) {
-            ProfileDivider()
-            ProfileRow(Icons.Filled.Smartphone, "Номера для входа") { app.sheet = Sheet.LoginPhones }
+        SettingsGroup("Настройки") {
+            ProfileRow(Icons.Filled.Notifications, "Уведомления") { app.requireAccount { app.sheet = Sheet.Notifications } }
+            // App lock: signed-in users on devices with biometrics.
+            val lockTitle = app.appLock.kind.title
+            if (app.appLock.isOfferable && lockTitle != null) {
+                ProfileDivider()
+                ProfileToggleRow(app.appLock.kind.icon, "Вход по $lockTitle", app.appLock.isEnabled) { on ->
+                    lockScope.launch { app.appLock.setEnabled(on) }
+                }
+            }
+            // Several phones per person: any of them signs into this account.
+            // Everyone signs in by phone, staff included.
+            if (registered) {
+                ProfileDivider()
+                ProfileRow(Icons.Filled.Smartphone, "Номера для входа") { app.sheet = Sheet.LoginPhones }
+            }
         }
-        if (registered && app.role.canBookAndEarn) {
+        SettingsGroup("Помощь и о нас") {
+            ProfileRow(Icons.Filled.Phone, "Контакты") { app.sheet = Sheet.Contacts }
+            if (registered) {
+                ProfileDivider()
+                ProfileRow(Icons.Filled.ReportProblem, "Нашлась неточность?", onClick = onIssue)
+            }
             ProfileDivider()
-            ProfileRow(Icons.Filled.CreditCard, "Мои брони и оплаты") { app.loadBookings(); app.sheet = Sheet.MyBookings }
+            ProfileRow(Icons.Filled.FormatQuote, "Отзывы путешественников") { app.loadReviews(null); app.sheet = Sheet.Reviews }
             ProfileDivider()
-            ProfileRow(Icons.Filled.Group, "Попутчики") { app.loadCompanions(); app.sheet = Sheet.Companions }
+            ProfileRow(Icons.Filled.AutoAwesome, "О нас") { app.sheet = Sheet.About }
             ProfileDivider()
-            ProfileRow(Icons.Filled.Public, "Мои страны") { app.loadCountries(); app.sheet = Sheet.Countries }
+            ProfileRow(Icons.Filled.FolderCopy, "Документы", expanded = documentsExpanded) { documentsExpanded = !documentsExpanded }
+            AnimatedVisibility(documentsExpanded) {
+                Column {
+                    ProfileDivider()
+                    ProfileRow(Icons.Filled.Description, "Условия бронирования", nested = true) { app.sheet = Sheet.Terms }
+                    ProfileDivider()
+                    ProfileRow(Icons.Filled.Gavel, "Пользовательское соглашение", nested = true) { open("https://travelneveralone.com/agreement") }
+                    ProfileDivider()
+                    ProfileRow(Icons.Filled.Policy, "Политика конфиденциальности", nested = true) { open("https://travelneveralone.com/policy") }
+                }
+            }
         }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.Description, "Условия бронирования") { app.sheet = Sheet.Terms }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.Gavel, "Пользовательское соглашение") { open("https://travelneveralone.com/agreement") }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.Policy, "Политика конфиденциальности") { open("https://travelneveralone.com/policy") }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.FormatQuote, "Отзывы путешественников") { app.loadReviews(null); app.sheet = Sheet.Reviews }
-        if (app.role.canBookAndEarn) {
-            ProfileDivider()
-            ProfileRow(Icons.Filled.CardGiftcard, "Подарочные сертификаты") { app.requireAccount { app.sheet = Sheet.Certificate } }
-        }
-        if (registered) {
-            ProfileDivider()
-            ProfileRow(Icons.Filled.ReportProblem, "Нашлась неточность?", onClick = onIssue)
-        }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.AutoAwesome, "О нас") { app.sheet = Sheet.About }
-        ProfileDivider()
-        ProfileRow(Icons.Filled.Phone, "Контакты") { app.sheet = Sheet.Contacts }
     }
 }
 
+/** One rounded card of settings rows with an optional small caption above. */
 @Composable
-private fun ProfileRow(icon: ImageVector, title: String, detail: String? = null, onClick: () -> Unit) {
+private fun SettingsGroup(title: String?, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+        if (title != null) {
+            Text(title.uppercase(), color = TnaColor.subtle, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
+        }
+        Column(Modifier.fillMaxWidth().clip(shape).background(TnaColor.surface).border(1.dp, TnaColor.stroke, shape), content = content)
+    }
+}
+
+/** [expanded] non-null makes the row a disclosure; [nested] is its muted sub-row. */
+@Composable
+private fun ProfileRow(icon: ImageVector, title: String, detail: String? = null, expanded: Boolean? = null, nested: Boolean = false, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().pressable(0.99f, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) { Icon(icon, null, tint = TnaColor.accent, modifier = Modifier.size(19.dp)) }
+        Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) { Icon(icon, null, tint = if (nested) TnaColor.subtle else TnaColor.accent, modifier = Modifier.size(19.dp)) }
         Spacer(Modifier.width(14.dp))
-        Text(title, color = TnaColor.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(title, color = TnaColor.ink, fontSize = 15.sp, fontWeight = if (nested) FontWeight.Medium else FontWeight.SemiBold, modifier = Modifier.weight(1f))
         if (detail != null) {
             Text(detail, color = TnaColor.subtle, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.width(6.dp))
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TnaColor.subtle, modifier = Modifier.size(18.dp).rotate(if (expanded == true) 90f else 0f))
     }
 }
 
