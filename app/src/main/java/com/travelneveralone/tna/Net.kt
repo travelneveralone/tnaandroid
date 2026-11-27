@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -307,19 +308,27 @@ class Postgrest(
             }
             .build()
         try {
-            http.newCall(request).execute().use { response ->
-                val text = response.body?.string().orEmpty()
-                // 426 = this build is no longer supported (0185): the update screen.
-                if (response.code == 426) UpgradeSignal.fire()
-                if (!response.isSuccessful) {
-                    if (cached) {
-                        cache.readStale(cacheKey)?.let { return@withContext it }
-                    }
-                    throw TnaException("Сервер ответил ${response.code}. Запрос не прошёл - можно повторить")
-                }
-                if (cached) cache.write(cacheKey, text)
-                text
+            var (code, text) = execute(request)
+            // Right after a token refresh, Supabase Auth can stamp `iat` a fraction
+            // of a second ahead of PostgREST's clock: 401 PGRST303 "JWT issued at
+            // future", while the same token works a second later. Nothing ran on
+            // the server, so one re-send is safe for writes too (iOS PostgRESTClient.perform).
+            if (tokenIssuedInFuture(code, text)) {
+                delay(CLOCK_SKEW_RETRY_MS)
+                val retried = execute(request)
+                code = retried.first
+                text = retried.second
             }
+            // 426 = this build is no longer supported (0185): the update screen.
+            if (code == 426) UpgradeSignal.fire()
+            if (code !in 200..299) {
+                if (cached) {
+                    cache.readStale(cacheKey)?.let { return@withContext it }
+                }
+                throw TnaException("Сервер ответил $code. Запрос не прошёл - можно повторить")
+            }
+            if (cached) cache.write(cacheKey, text)
+            text
         } catch (error: TnaException) {
             throw error
         } catch (error: Exception) {
@@ -330,15 +339,29 @@ class Postgrest(
         }
     }
 
+    private fun execute(request: Request): Pair<Int, String> =
+        http.newCall(request).execute().use { response ->
+            response.code to response.body?.string().orEmpty()
+        }
+
     private fun enc(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
 
     private companion object {
         /// Same as iOS `PostgRESTClient.cacheFallbackWait`.
         const val CACHE_FALLBACK_WAIT_MS = 5_000L
+        /// Same as iOS `PostgRESTClient.clockSkewRetryDelay`.
+        const val CLOCK_SKEW_RETRY_MS = 1_500L
     }
 }
 
 class TnaException(message: String) : Exception(message)
+
+/// 401 PGRST303 about the token's time claims (`iat`/`nbf`): a clock skew between
+/// Auth and PostgREST, not a bad session. "JWT expired" is NOT matched - that one
+/// needs a refresh, not a retry (iOS `PostgRESTClient.isTokenIssuedInFuture`).
+fun tokenIssuedInFuture(status: Int, body: String): Boolean =
+    status == 401 && body.contains("PGRST303") &&
+        (body.contains("issued at future") || body.contains("not yet valid"))
 
 const val TOO_MANY_CODE_ATTEMPTS = "Слишком много попыток. Попробуй чуть позже"
 

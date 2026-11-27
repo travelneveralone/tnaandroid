@@ -66,4 +66,15 @@ class NetRulesTest {
         assertEquals(0, passportTtl(fresh = true))
         assertTrue(postgrestCaches("POST", "rest/v1/rpc/my_passport", passportTtl(fresh = true)))
     }
+
+    @Test fun retriesOnlyATokenIssuedInFuture() {
+        fun body(message: String, code: String = "PGRST303") =
+            """{"code":"$code","details":null,"hint":null,"message":"$message"}"""
+        assertTrue(tokenIssuedInFuture(401, body("JWT issued at future")))
+        assertTrue(tokenIssuedInFuture(401, body("JWT not yet valid")))
+        assertFalse(tokenIssuedInFuture(401, body("JWT expired")))
+        assertFalse(tokenIssuedInFuture(401, body("JWSError JWSInvalidSignature", "PGRST301")))
+        assertFalse(tokenIssuedInFuture(403, body("JWT issued at future")))
+        assertFalse(tokenIssuedInFuture(401, ""))
+    }
 }
