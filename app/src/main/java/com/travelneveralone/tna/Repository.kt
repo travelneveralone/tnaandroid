@@ -1233,6 +1233,8 @@ class TnaRepository(
             put("wish", wish.trim())
             put("buyer_name", buyerName.trim())
             put("buyer_phone", buyerPhone.trim())
+            // The bank page comes straight back here (AndroidManifest intent filter).
+            put("return_url", "${BuildConfig.APPLICATION_ID}://certificates")
         }.toString())
         val obj = json.parseToJsonElement(raw).jsonObjectOrNull() ?: return null
         val cert = obj["certificate"]?.jsonObjectOrNull()?.let { certificate(it) } ?: return null

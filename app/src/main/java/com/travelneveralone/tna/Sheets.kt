@@ -861,7 +861,7 @@ fun CertificateSheet(app: AppModel) {
         "awaiting" -> Column(Modifier.fillMaxWidth().padding(24.dp).padding(top = 30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
             CircularProgressIndicator(color = TnaColor.accent)
             Text("ЖДЁМ ОПЛАТУ", style = displayStyle(30))
-            Text("Страница оплаты открылась в браузере. Вернись в приложение после оплаты - сертификат активируется сам.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+            Text("После оплаты банк вернёт тебя сюда - сертификат активируется сам.", color = TnaColor.subtle, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
             Gap(20)
             PrimaryButton(if (state.checking) "Проверяем…" else "Я оплатил(а)", enabled = !state.checking, icon = Icons.Filled.CheckCircle) { check() }
             Text("Открыть страницу оплаты ещё раз", color = TnaColor.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
