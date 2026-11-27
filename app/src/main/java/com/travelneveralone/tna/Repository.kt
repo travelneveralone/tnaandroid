@@ -154,7 +154,9 @@ class TnaRepository(
     }
 
     suspend fun fetchBookings(): List<BookingSummary> {
-        val raw = api.get("bookings", listOf(
+        // `my_bookings` (0199) scopes to the caller on the server. Never read
+        // `bookings` here: for staff its RLS also passes "manager bookings read".
+        val raw = api.get("my_bookings", listOf(
             "select" to "id,note,status,people_count,created_at,departure_id,departures(label,tours(name))",
             "order" to "created_at.desc",
         ), ttlSec = 60)
